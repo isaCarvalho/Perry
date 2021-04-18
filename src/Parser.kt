@@ -1,7 +1,11 @@
+import TableOfSymbol.Symbol
+
 @Suppress("NON_EXHAUSTIVE_WHEN")
 class Parser(private val lex: Lex) {
     private val bufferTokens = ArrayList<Token>()
     private var isEnd = false
+
+    val tableOfSymbol = TableOfSymbol()
 
     init {
         readToken()
@@ -34,7 +38,7 @@ class Parser(private val lex: Lex) {
         }
     }
 
-    private fun match(type: TokenType) {
+    private fun match(type: TokenType): Token {
         val token = peek()
 
         if (token != null && token.tokenType == type) {
@@ -43,6 +47,8 @@ class Parser(private val lex: Lex) {
         } else {
             syntacticError(type)
         }
+
+        return token!!
     }
 
     private fun syntacticError(vararg types: TokenType) {
@@ -111,8 +117,8 @@ class Parser(private val lex: Lex) {
     }
 
     // [ID] => Seqüência alfanumérica iniciada por char (tratado no léxico)
-    private fun id() {
-        match(TokenType.Identifier)
+    private fun id(): Token {
+        return match(TokenType.Identifier)
     }
 
     // [NUMERO] => seqüência numérica com a ocorrência de no máximo um ponto (tratado no léxico)
@@ -129,42 +135,74 @@ class Parser(private val lex: Lex) {
     // [CONSTANTE] => (const) [ID] (=) [CONST_VALOR] (;)
     private fun constant() {
         match(TokenType.Const)
-        id()
+
+        val idToken = id()
         match(TokenType.Equal)
-        constValue()
+
+        val valueToken = constValue()
         match(TokenType.Semicolon)
+
+        tableOfSymbol.insertSymbol(
+            idToken = idToken,
+            category = TokenType.Const,
+            valueToken = valueToken
+        )
     }
 
     // [CONST_VALOR] => Seqüência alfanumérica iniciada por aspas e terminada em aspas (tratado no léxico)
     // [CONST_VALOR] => [EXP_MAT]
-    private fun constValue() {
+    private fun constValue(): Token? {
         val tokenType = peek()!!.tokenType
         if (tokenType == TokenType.Text) {
-            match(TokenType.Text)
+            return match(TokenType.Text)
         } else if (tokenType == TokenType.Identifier || tokenType == TokenType.Integer || tokenType == TokenType.Real) {
-            expMath()
+            return expMath()
         } else {
             syntacticError(TokenType.Identifier, TokenType.Integer, TokenType.Real, TokenType.Text)
         }
+
+        return null
     }
 
     // [TIPO] => (type) [ID] (=) [TIPO_DADO] (;)
     private fun type() {
         match(TokenType.Type)
-        id()
+
+        val idToken = id()
         match(TokenType.Equal)
-        dataType()
+
+        val dataTypeToken = dataType()
         match(TokenType.Semicolon)
+
+        tableOfSymbol.insertSymbol(
+            idToken = idToken,
+            category = TokenType.Type,
+            valueToken = dataTypeToken
+        )
     }
 
     // [VARIAVEL] => (var) [ID] [LISTA_ID] (:) [TIPO_DADO] (;)
     private fun variable() {
         match(TokenType.Var)
-        id()
+
+        val idToken = id()
+        tableOfSymbol.addIdentifier(idToken)
+
         idList()
         match(TokenType.Colon)
-        dataType()
+
+        val dataTypeToken = dataType()
         match(TokenType.Semicolon)
+
+        tableOfSymbol.identifiers.forEach {
+            tableOfSymbol.insertSymbol(
+                idToken = it,
+                category = TokenType.Var,
+                valueToken = dataTypeToken
+            )
+        }
+
+        tableOfSymbol.clearIdentifiers()
     }
 
     // [LISTA_ID] => (,) [ID] [LISTA_ID]
@@ -172,29 +210,39 @@ class Parser(private val lex: Lex) {
     private fun idList() {
         if (peek()!!.tokenType == TokenType.Comma) {
             match(TokenType.Comma)
-            id()
+            val idToken = id()
+
+            tableOfSymbol.addIdentifier(idToken)
             idList()
         }
     }
 
     // [CAMPOS] => [ID] (:) [TIPO_DADO] [LISTA_CAMPOS]
     // [CAMPOS] => Є
-    private fun fields() {
+    private fun fields(isParameters: Boolean = false) {
         if (peek()!!.tokenType == TokenType.Identifier) {
-            id()
+            val idToken = id()
+
             match(TokenType.Colon)
-            dataType()
-            fieldList()
+
+            val dataTypeToken = dataType()
+
+            if (isParameters) {
+                tableOfSymbol.addParameter(idToken, dataTypeToken)
+                fieldList(true)
+            } else {
+                fieldList()
+            }
         }
     }
 
     // [LISTA_CAMPOS] => (;) [CAMPOS] [LISTA_CAMPOS]
     // [LISTA_CAMPOS] => Є
-    private fun fieldList() {
+    private fun fieldList(isParameters: Boolean = false) {
         if (peek()!!.tokenType == TokenType.Semicolon) {
             match(TokenType.Semicolon)
-            fields()
-            fieldList()
+            fields(isParameters)
+            fieldList(isParameters)
         }
     }
 
@@ -203,8 +251,9 @@ class Parser(private val lex: Lex) {
     // [TIPO_DADO] => (array) ([) [NUMERO] (]) (of) [TIPO_DADO]
     // [TIPO_DADO] => (record) [CAMPOS] (end)
     // [TIPO_DADO] => [ID]
-    private fun dataType() {
-        when (val tokenType = peek()!!.tokenType) {
+    private fun dataType(): Token {
+        val token = peek()!!
+        when (token.tokenType) {
             TokenType.Integer -> match(TokenType.Integer)
 
             TokenType.Real -> match(TokenType.Real)
@@ -234,6 +283,8 @@ class Parser(private val lex: Lex) {
                 TokenType.Identifier
             )
         }
+
+        return token
     }
 
     // [FUNCAO] => (function) [NOME_FUNCAO] [BLOCO_FUNCAO]
@@ -245,20 +296,48 @@ class Parser(private val lex: Lex) {
 
     // [NOME_FUNCAO] => [ID] [PARAM_FUNC] (:) [TIPO_DADO]
     private fun functionName() {
-        id()
-        functionParameter()
+        val idToken = id()
+
+        val parameterSize = functionParameter(idToken.lexeme)
         match(TokenType.Colon)
-        dataType()
+
+        val dataTypeToken = dataType()
+
+        tableOfSymbol.insertSymbol(
+            idToken = idToken,
+            valueToken = dataTypeToken,
+            category = TokenType.Function,
+            parameterSize = parameterSize
+        )
     }
 
     // [PARAM_FUNC] => (() [CAMPOS] ())
     // [PARAM_FUNC] => Є
-    private fun functionParameter() {
+    private fun functionParameter(functionName: String): Int {
+        var parameterSize = 0
+
         if (peek()!!.tokenType == TokenType.LeftParenthesis) {
             match(TokenType.LeftParenthesis)
-            fields()
+            fields(true)
+
+            tableOfSymbol.parameters.forEach {
+                println("========> $functionName: ${it.key}")
+
+                tableOfSymbol.insertSymbol(
+                    idToken = it.key,
+                    category = it.key.tokenType,
+                    valueToken = it.value,
+                    scope = functionName
+                )
+            }
+
+            parameterSize = tableOfSymbol.parameters.size
+
             match(TokenType.RightParenthesis)
+            tableOfSymbol.clearParameter()
         }
+
+        return parameterSize
     }
 
     // [BLOCO_FUNCAO] => [DEF_VAR] (begin) [COMANDO] [LISTA_COM] (end)
@@ -403,12 +482,14 @@ class Parser(private val lex: Lex) {
     }
 
     // [EXP_MAT] => [PARAMETRO] [EXP_MAT_2]
-    private fun expMath() {
-        val tokenType = peek()!!.tokenType
-        if (tokenType == TokenType.Integer || tokenType == TokenType.Real || tokenType == TokenType.Identifier) {
+    private fun expMath(): Token {
+        val token = peek()!!
+        if (token.tokenType == TokenType.Integer || token.tokenType == TokenType.Real || token.tokenType == TokenType.Identifier) {
             parameter()
             expMath2()
         }
+
+        return token
     }
 
     // [EXP_MAT] => [OP_ MAT] [EXP_ MAT]
