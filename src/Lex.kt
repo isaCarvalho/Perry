@@ -1,7 +1,7 @@
 class Lex(fileName: String) {
     private var fileReader = Buffer(fileName)
 
-    fun getNextToken(): Token? {
+    fun getNextToken(): Token {
         spaces()
 
         comments()
@@ -11,56 +11,55 @@ class Lex(fileName: String) {
 
         var nextToken: Token? = endOfFile()
         if (check(nextToken)) {
-            return nextToken
+            return nextToken!!
         }
 
         nextToken = keyWord()
         if (check(nextToken)) {
-            return nextToken
+            return nextToken!!
         }
 
         nextToken = number()
         if (check(nextToken)) {
-            return nextToken
+            return nextToken!!
         }
 
         nextToken = mathOperator()
         if (check(nextToken)) {
-            return nextToken
+            return nextToken!!
         }
 
         nextToken = relationalOperator()
         if (check(nextToken)) {
-            return nextToken
+            return nextToken!!
         }
 
         nextToken = points()
         if (check(nextToken)) {
-            return nextToken
+            return nextToken!!
         }
 
         nextToken = parenthesis()
         if (check(nextToken)) {
-            return nextToken
+            return nextToken!!
         }
 
         nextToken = brackets()
         if (check(nextToken)) {
-            return nextToken
+            return nextToken!!
         }
 
         nextToken = text()
         if (check(nextToken)) {
-            return nextToken
+            return nextToken!!
         }
 
         nextToken = identifier()
         if (check(nextToken)) {
-            return nextToken
+            return nextToken!!
         }
 
-        println("Lexical error")
-        return null
+        throw Exception("Lexical error")
     }
 
     private fun text(): Token? {
