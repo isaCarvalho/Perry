@@ -21,7 +21,6 @@ enum class TokenType {
     LessThan,
     Minus,
     MoreThan,
-    Number,
     Of,
     Plus,
     Read,

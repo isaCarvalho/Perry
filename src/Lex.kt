@@ -67,7 +67,7 @@ class Lex(fileName: String) {
             return null
         }
 
-        while (match('"')) {
+        while (!match('"')) {
             getChar()
         }
 
