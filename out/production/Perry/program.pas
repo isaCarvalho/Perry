@@ -84,8 +84,8 @@ end
 
 begin
   A := TAM + 20;
-  B := fatorial(A);
-  C := exp(A, B);
+  B := fatorial(A, 1);
+  C := exp(A,B);
   D := media(E);
   F := lerDados()
 end

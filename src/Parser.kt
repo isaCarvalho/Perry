@@ -1,11 +1,9 @@
-import TableOfSymbol.Symbol
-
 @Suppress("NON_EXHAUSTIVE_WHEN")
 class Parser(private val lex: Lex) {
     private val bufferTokens = ArrayList<Token>()
     private var isEnd = false
 
-    val tableOfSymbol = TableOfSymbol()
+    val scopes = Scopes()
 
     init {
         readToken()
@@ -58,10 +56,30 @@ class Parser(private val lex: Lex) {
         )
     }
 
+    private fun variableNotDeclaredError(token: Token) {
+        var msg = "Semantic error: variable $token not declared"
+
+        val scope = scopes.getCurrentScope().name
+
+        if (scope != "global") {
+            msg += " in the scope of function '$scope'"
+        }
+
+        throw Exception(msg)
+    }
+
+    private fun unexpectedParameterError(functionName: String, expected : Int, found: Int) {
+        throw Exception("Semantic error: function '$functionName' was expecting $expected parameter(s), but $found found")
+    }
+
     // [PROGRAMA] => [DECLARACOES] [PRINCIPAL]
     fun program() {
+        scopes.createNewScope("global")
+
         declarations()
         mainFunction()
+
+        scopes.dropScope()
     }
 
     // [PRINCIPAL] => (begin) [COMANDO] [LISTA_COM] (end)
@@ -142,7 +160,7 @@ class Parser(private val lex: Lex) {
         val valueToken = constValue()
         match(TokenType.Semicolon)
 
-        tableOfSymbol.insertSymbol(
+        scopes.getGlobalScope().insertSymbol(
             idToken = idToken,
             category = TokenType.Const,
             valueToken = valueToken
@@ -174,7 +192,7 @@ class Parser(private val lex: Lex) {
         val dataTypeToken = dataType()
         match(TokenType.Semicolon)
 
-        tableOfSymbol.insertSymbol(
+        scopes.getGlobalScope().insertSymbol(
             idToken = idToken,
             category = TokenType.Type,
             valueToken = dataTypeToken
@@ -186,7 +204,7 @@ class Parser(private val lex: Lex) {
         match(TokenType.Var)
 
         val idToken = id()
-        tableOfSymbol.addIdentifier(idToken)
+        scopes.getCurrentScope().addIdentifier(idToken)
 
         idList()
         match(TokenType.Colon)
@@ -194,15 +212,15 @@ class Parser(private val lex: Lex) {
         val dataTypeToken = dataType()
         match(TokenType.Semicolon)
 
-        tableOfSymbol.identifiers.forEach {
-            tableOfSymbol.insertSymbol(
+        scopes.getCurrentScope().identifiers.forEach {
+            scopes.getCurrentScope().insertSymbol(
                 idToken = it,
                 category = TokenType.Var,
                 valueToken = dataTypeToken
             )
         }
 
-        tableOfSymbol.clearIdentifiers()
+        scopes.getCurrentScope().clearIdentifiers()
     }
 
     // [LISTA_ID] => (,) [ID] [LISTA_ID]
@@ -212,7 +230,7 @@ class Parser(private val lex: Lex) {
             match(TokenType.Comma)
             val idToken = id()
 
-            tableOfSymbol.addIdentifier(idToken)
+            scopes.getCurrentScope().addIdentifier(idToken)
             idList()
         }
     }
@@ -228,7 +246,7 @@ class Parser(private val lex: Lex) {
             val dataTypeToken = dataType()
 
             if (isParameters) {
-                tableOfSymbol.addParameter(idToken, dataTypeToken)
+                scopes.getCurrentScope().addParameter(idToken, dataTypeToken)
                 fieldList(true)
             } else {
                 fieldList()
@@ -290,20 +308,25 @@ class Parser(private val lex: Lex) {
     // [FUNCAO] => (function) [NOME_FUNCAO] [BLOCO_FUNCAO]
     private fun function() {
         match(TokenType.Function)
+
         functionName()
         functionBloc()
+
+        scopes.dropScope()
     }
 
     // [NOME_FUNCAO] => [ID] [PARAM_FUNC] (:) [TIPO_DADO]
     private fun functionName() {
         val idToken = id()
 
+        scopes.createNewScope(idToken.lexeme)
+
         val parameterSize = functionParameter(idToken.lexeme)
         match(TokenType.Colon)
 
         val dataTypeToken = dataType()
 
-        tableOfSymbol.insertSymbol(
+        scopes.getGlobalScope().insertSymbol(
             idToken = idToken,
             valueToken = dataTypeToken,
             category = TokenType.Function,
@@ -320,21 +343,20 @@ class Parser(private val lex: Lex) {
             match(TokenType.LeftParenthesis)
             fields(true)
 
-            tableOfSymbol.parameters.forEach {
+            scopes.getCurrentScope().parameters.forEach {
                 println("========> $functionName: ${it.key}")
 
-                tableOfSymbol.insertSymbol(
+                scopes.getCurrentScope().insertSymbol(
                     idToken = it.key,
                     category = it.key.tokenType,
-                    valueToken = it.value,
-                    scope = functionName
+                    valueToken = it.value
                 )
             }
 
-            parameterSize = tableOfSymbol.parameters.size
+            parameterSize = scopes.getCurrentScope().parameters.size
 
             match(TokenType.RightParenthesis)
-            tableOfSymbol.clearParameter()
+            scopes.getCurrentScope().clearParameter()
         }
 
         return parameterSize
@@ -395,7 +417,12 @@ class Parser(private val lex: Lex) {
     private fun command() {
         when (val tokenType = peek()!!.tokenType) {
             TokenType.Identifier -> {
-                id()
+                val idToken = id()
+
+                if (!scopes.matchNestedScopes(idToken.lexeme)) {
+                    variableNotDeclaredError(idToken)
+                }
+
                 name()
                 match(TokenType.Assignment)
                 expMath()
@@ -442,9 +469,11 @@ class Parser(private val lex: Lex) {
     // [LISTA_PARAM] => [PARAMETRO] [LIST_PARAM_2]
     // [LISTA_PARAM] => Є
     private fun listParameter() {
-        val tokenType = peek()!!.tokenType
+        val token = peek()!!
+        val tokenType = token.tokenType
+
         if (tokenType == TokenType.Integer || tokenType == TokenType.Real || tokenType == TokenType.Identifier) {
-            parameter()
+            parameter(true)
             listParameter2()
         }
     }
@@ -508,18 +537,25 @@ class Parser(private val lex: Lex) {
 
     // [PARAMETRO] => [ID] [NOME]
     // [PARAMETRO] => [NUMERO]
-    private fun parameter() {
-        when (peek()!!.tokenType) {
+    private fun parameter(isListParameter: Boolean = false) {
+        val token = peek()!!
+        var dataTypeToken: Token? = null
+
+        when (token.tokenType) {
             TokenType.Identifier -> {
-                match(TokenType.Identifier)
-                name()
+                dataTypeToken = match(TokenType.Identifier)
+                name(token.lexeme)
             }
 
-            TokenType.Integer -> match(TokenType.Integer)
+            TokenType.Integer -> dataTypeToken = match(TokenType.Integer)
 
-            TokenType.Real -> match(TokenType.Real)
+            TokenType.Real -> dataTypeToken = match(TokenType.Real)
 
             else -> syntacticError()
+        }
+
+        if (isListParameter) {
+            scopes.getGlobalScope().addParameter(token, dataTypeToken!!)
         }
     }
 
@@ -563,7 +599,7 @@ class Parser(private val lex: Lex) {
     // [NOME] => ([) [PARAMETRO] (])
     // [NOME] => (() [LISTA_PARAM] ())
     // [NOME] => Є
-    private fun name() {
+    private fun name(functionName: String? = null) {
         when (peek()!!.tokenType) {
             TokenType.Dot -> {
                 match(TokenType.Dot)
@@ -578,6 +614,16 @@ class Parser(private val lex: Lex) {
             TokenType.LeftParenthesis -> {
                 match(TokenType.LeftParenthesis)
                 listParameter()
+
+                // Verifica se o numero de parqmetros passados pra função é igual ao declarado
+                val global = scopes.getGlobalScope()
+                val expected = global.getSymbol(functionName!!)!!.parameterSize
+                val found = global.parameters.size
+                if (found != expected) {
+                    unexpectedParameterError(functionName, expected!!, found)
+                }
+                scopes.getGlobalScope().clearParameter()
+
                 match(TokenType.RightParenthesis)
             }
         }

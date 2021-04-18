@@ -3,6 +3,8 @@ fun main() {
     val parser = Parser(lex)
     parser.program()
 
-    println("\n=============================================================\n")
-    parser.tableOfSymbol.printSymbolTable()
+    parser.scopes.goThoughtAlignScopes().forEach {
+        println("\n=============================================================\n")
+        it.printSymbolTable()
+    }
 }
