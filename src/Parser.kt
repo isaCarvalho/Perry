@@ -72,6 +72,14 @@ class Parser(private val lex: Lex) {
         throw Exception("Semantic error: function '$functionName' was expecting $expected parameter(s), but $found found")
     }
 
+    private fun invalidArrayError(name: String) {
+        throw Exception("Semantic error: $name is not an array")
+    }
+
+    private fun invalidRecordError(name: String) {
+        throw Exception("Semantic error: $name is not a record")
+    }
+
     // [PROGRAMA] => [DECLARACOES] [PRINCIPAL]
     fun program() {
         scopes.createNewScope("global")
@@ -344,7 +352,6 @@ class Parser(private val lex: Lex) {
             fields(true)
 
             scopes.getCurrentScope().parameters.forEach {
-                println("========> $functionName: ${it.key}")
 
                 scopes.getCurrentScope().insertSymbol(
                     idToken = it.key,
@@ -423,7 +430,7 @@ class Parser(private val lex: Lex) {
                     variableNotDeclaredError(idToken)
                 }
 
-                name()
+                name(idToken.lexeme)
                 match(TokenType.Assignment)
                 expMath()
             }
@@ -449,8 +456,8 @@ class Parser(private val lex: Lex) {
 
             TokenType.Read -> {
                 match(TokenType.Read)
-                id()
-                name()
+                val idToken = id()
+                name(idToken.lexeme)
             }
 
             else -> syntacticError(TokenType.Identifier, TokenType.While, TokenType.If, TokenType.Write, TokenType.Read)
@@ -599,33 +606,71 @@ class Parser(private val lex: Lex) {
     // [NOME] => ([) [PARAMETRO] (])
     // [NOME] => (() [LISTA_PARAM] ())
     // [NOME] => Є
-    private fun name(functionName: String? = null) {
+    private fun name(name: String) {
         when (peek()!!.tokenType) {
             TokenType.Dot -> {
                 match(TokenType.Dot)
-                id()
-                name()
+                val idToken = id()
+
+                if (!validateType(name, TokenType.Record)) {
+                    invalidRecordError(name)
+                }
+
+                name(idToken.lexeme)
             }
             TokenType.LeftBracket -> {
                 match(TokenType.LeftBracket)
                 parameter()
                 match(TokenType.RightBracket)
+
+                if (!validateType(name, TokenType.Array)) {
+                    invalidArrayError(name)
+                }
             }
             TokenType.LeftParenthesis -> {
                 match(TokenType.LeftParenthesis)
                 listParameter()
 
-                // Verifica se o numero de parqmetros passados pra função é igual ao declarado
-                val global = scopes.getGlobalScope()
-                val expected = global.getSymbol(functionName!!)!!.parameterSize
-                val found = global.parameters.size
-                if (found != expected) {
-                    unexpectedParameterError(functionName, expected!!, found)
-                }
-                scopes.getGlobalScope().clearParameter()
+                validateParametersSize(name)
 
                 match(TokenType.RightParenthesis)
             }
         }
+    }
+
+    private fun validateParametersSize(name: String) {
+        // Verifica se o numero de parqmetros passados pra função é igual ao declarado
+        val global = scopes.getGlobalScope()
+        val expected = global.getSymbol(name)!!.parameterSize
+        val found = global.parameters.size
+        if (found != expected) {
+            unexpectedParameterError(name, expected!!, found)
+        }
+        scopes.getGlobalScope().clearParameter()
+    }
+
+    private fun validateType(name: String, type: TokenType) : Boolean {
+        var isValid = false
+        scopes.goThoughtAlignScopes().forEach {
+            val symbol = it.getSymbol(name)
+            if (symbol != null) {
+                isValid = when {
+                    symbol.type == type.toString() -> {
+                        true
+                    }
+                    TokenType.values().joinToString(",").contains(symbol.type.toString()) -> {
+                        false
+                    }
+                    else -> {
+                        validateType(symbol.type.toString(), type)
+                    }
+                }
+
+                if (isValid)
+                    return@forEach
+            }
+        }
+
+        return isValid
     }
 }

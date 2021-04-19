@@ -4,10 +4,6 @@ const TAM = 10.0;
 
 type vetor = array [15] of integer;
 
-type aluno = record
-  nota1: real;
-  nota2: real;
-end;
 
 var A, B, C, D: integer;
 
@@ -49,8 +45,8 @@ end
 function lerDados: aluno
 begin
   write "digite as notas do aluno";
-  read result.nota1;
-  read result.nota2
+  read aluno.nota1;
+  read aluno.nota2
 end
 
 function maior(a: vetor): integer
@@ -84,7 +80,7 @@ end
 
 begin
   A := TAM + 20;
-  B := fatorial(A, 1);
+  B := fatorial(A);
   C := exp(A,B);
   D := media(E);
   F := lerDados()

@@ -49,8 +49,8 @@ end
 function lerDados: aluno
 begin
   write "digite as notas do aluno";
-  read result.nota1;
-  read result.nota2
+  read aluno.nota1;
+  read aluno.nota2
 end
 
 function maior(a: vetor): integer
