@@ -1,7 +1,5 @@
 interface AST
 
-class Empty : AST
-
 /** Statement functions **/
 
 abstract class Statement(
