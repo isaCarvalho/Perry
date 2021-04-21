@@ -27,10 +27,13 @@ class Parser(private val lex: Lex) {
         println("Token ${peek()} read")
     }
 
-    private fun peek(): Token? {
+    private fun peek(k: Int = 1): Token? {
         return when {
             bufferTokens.isEmpty() -> null
-            else -> bufferTokens[0]
+
+            k - 1 >= bufferTokens.size -> bufferTokens[bufferTokens.size - 1]
+
+            else -> bufferTokens[k - 1]
         }
     }
 
@@ -41,163 +44,227 @@ class Parser(private val lex: Lex) {
             println("Match: ${token.tokenType}")
             readToken()
         } else {
-            syntacticError(type)
+            throw SyntacticException(token, type)
         }
 
-        return token!!
-    }
-
-    private fun syntacticError(vararg types: TokenType) {
-        throw Exception(
-            "Syntactic error: expected one of the following (${types.joinToString(", ")}), " +
-                    "but found ${peek()}"
-        )
+        return token
     }
 
     // [PROGRAMA] => [DECLARACOES] [PRINCIPAL]
-    fun program() {
-        declarations()
-        mainFunction()
+    fun program() : Program {
+        val statements: MutableList<Statement> = statements()
+        val bloc = mainFunction()
+
+        return Program(statements, bloc)
     }
 
     // [PRINCIPAL] => (begin) [COMANDO] [LISTA_COM] (end)
-    private fun mainFunction() {
+    private fun mainFunction() : Bloc {
+        val commands = ArrayList<AST>()
+
         match(TokenType.Begin)
-        command()
-        listCommand()
+        commands.add(command())
+        commands.addAll(listCommand())
         match(TokenType.End)
+
+        return Bloc(commands)
     }
 
     // [DECLARACOES] => [DEF_CONST] [DEF_TIPOS] [DEF_VAR] [DEF_FUNC]
-    private fun declarations() {
-        defConst()
-        defTypes()
-        defVar()
-        defFunc()
+    private fun statements() : MutableList<Statement> {
+        val statements = ArrayList<Statement>()
+
+        statements.addAll(defConst())
+        statements.addAll(defTypes())
+        statements.addAll(defVar())
+        statements.addAll(defFunc())
+
+        return statements
     }
 
     // [DEF_CONST] => [CONSTANTE] [DEF_CONST]
     // [DEF_CONST] => Є
-    private fun defConst() {
-        if (peek()!!.tokenType == TokenType.Const) {
-            constant()
-            defConst()
+    private fun defConst() : MutableList<ConstStat> {
+        val constants = ArrayList<ConstStat>()
+
+        while (peek()!!.tokenType == TokenType.Const) {
+            constants.add(constStat())
         }
+
+        return constants
     }
 
     // [DEF_TIPOS] => [TIPO] [DEF_TIPOS]
     // [DEF_TIPOS] => Є
-    private fun defTypes() {
-        if (peek()!!.tokenType == TokenType.Type) {
-            type()
-            defTypes()
+    private fun defTypes() : MutableList<TypeStat> {
+        val types = ArrayList<TypeStat>()
+
+        while (peek()!!.tokenType == TokenType.Type) {
+            types.add(type())
         }
+
+        return types
     }
 
     // [DEF_VAR] => [VARIAVEL] [DEF_VAR]
     // [DEF_VAR] => Є
-    private fun defVar() {
-        if (peek()!!.tokenType == TokenType.Var) {
-            variable()
-            defVar()
+    private fun defVar() : MutableList<VarStat>{
+        val vars = ArrayList<VarStat>()
+
+        while (peek()!!.tokenType == TokenType.Var) {
+            vars.addAll(variable())
         }
+
+        return vars
     }
 
     // [DEF_FUNC] => [FUNCAO] [DEF_FUNC]
     // [DEF_FUNC] => Є
-    private fun defFunc() {
-        if (peek()!!.tokenType == TokenType.Function) {
-            function()
-            defFunc()
+    private fun defFunc() : MutableList<FunctionStat> {
+        val functions = ArrayList<FunctionStat>()
+
+        while (peek()!!.tokenType == TokenType.Function) {
+            functions.add(function())
         }
+
+        return functions
     }
 
     // [ID] => Seqüência alfanumérica iniciada por char (tratado no léxico)
-    private fun id() {
-        match(TokenType.Identifier)
+    private fun id(): Token {
+        return match(TokenType.Identifier)
     }
 
     // [NUMERO] => seqüência numérica com a ocorrência de no máximo um ponto (tratado no léxico)
-    private fun number() {
-        when (peek()!!.tokenType) {
-            TokenType.Integer -> match(TokenType.Integer)
+    private fun number(): DataType {
+        val token = peek()!!
 
-            TokenType.Real -> match(TokenType.Real)
+        return when (token.tokenType) {
+            TokenType.Integer -> Integer(match(TokenType.Integer).lexeme)
 
-            else -> syntacticError(TokenType.Integer, TokenType.Real)
+            TokenType.Real -> Real(match(TokenType.Real).lexeme)
+
+            else -> throw SyntacticException(token, TokenType.Integer, TokenType.Real)
         }
     }
 
     // [CONSTANTE] => (const) [ID] (=) [CONST_VALOR] (;)
-    private fun constant() {
+    private fun constStat(): ConstStat {
         match(TokenType.Const)
-        id()
+        val idToken: Token = id()
         match(TokenType.Equal)
-        constValue()
+        val value = constValue()
         match(TokenType.Semicolon)
+
+        return ConstStat(
+            name = idToken.lexeme,
+            ast = value
+        )
     }
 
     // [CONST_VALOR] => Seqüência alfanumérica iniciada por aspas e terminada em aspas (tratado no léxico)
     // [CONST_VALOR] => [EXP_MAT]
-    private fun constValue() {
-        val tokenType = peek()!!.tokenType
-        if (tokenType == TokenType.Text) {
+    private fun constValue(): AST {
+        val token = peek()!!
+        val tokenType = token.tokenType
+
+        return if (tokenType == TokenType.Text) {
             match(TokenType.Text)
+            Text(token.lexeme)
         } else if (tokenType == TokenType.Identifier || tokenType == TokenType.Integer || tokenType == TokenType.Real) {
-            expMath()
+            return expMath()
         } else {
-            syntacticError(TokenType.Identifier, TokenType.Integer, TokenType.Real, TokenType.Text)
+            throw SyntacticException(
+                token,
+                TokenType.Identifier,
+                TokenType.Integer,
+                TokenType.Real,
+                TokenType.Text
+            )
         }
     }
 
     // [TIPO] => (type) [ID] (=) [TIPO_DADO] (;)
-    private fun type() {
+    private fun type() : TypeStat {
         match(TokenType.Type)
-        id()
+        val idToken = id()
         match(TokenType.Equal)
-        dataType()
+        val dataType = dataType(idToken.lexeme)
         match(TokenType.Semicolon)
+
+        return TypeStat(
+            name = idToken.lexeme,
+            type = dataType
+        )
     }
 
     // [VARIAVEL] => (var) [ID] [LISTA_ID] (:) [TIPO_DADO] (;)
-    private fun variable() {
+    private fun variable() : MutableList<VarStat> {
         match(TokenType.Var)
-        id()
-        idList()
+        val idToken = id()
+        val idsToken = idList()
         match(TokenType.Colon)
-        dataType()
+        val dataType = dataType(idToken.lexeme)
         match(TokenType.Semicolon)
+
+        val vars = ArrayList<VarStat>()
+
+        vars.add(VarStat(idToken.lexeme, dataType))
+        idsToken.forEach {
+            vars.add(VarStat(it.lexeme, dataType))
+        }
+
+        return vars
     }
 
     // [LISTA_ID] => (,) [ID] [LISTA_ID]
     // [LISTA_ID] => Є
-    private fun idList() {
-        if (peek()!!.tokenType == TokenType.Comma) {
+    private fun idList() : List<Token>{
+        val ids = ArrayList<Token>()
+
+        while (peek()!!.tokenType == TokenType.Comma) {
             match(TokenType.Comma)
-            id()
-            idList()
+            ids.add(id())
         }
+
+        return ids
     }
 
     // [CAMPOS] => [ID] (:) [TIPO_DADO] [LISTA_CAMPOS]
     // [CAMPOS] => Є
-    private fun fields() {
-        if (peek()!!.tokenType == TokenType.Identifier) {
-            id()
-            match(TokenType.Colon)
-            dataType()
-            fieldList()
-        }
-    }
-
     // [LISTA_CAMPOS] => (;) [CAMPOS] [LISTA_CAMPOS]
     // [LISTA_CAMPOS] => Є
-    private fun fieldList() {
-        if (peek()!!.tokenType == TokenType.Semicolon) {
-            match(TokenType.Semicolon)
-            fields()
-            fieldList()
+    private fun fields() : MutableList<Field> {
+        val fields = ArrayList<Field>()
+
+        if (peek()!!.tokenType == TokenType.Identifier) {
+            var idToken = id()
+            match(TokenType.Colon)
+            var dataType = dataType(idToken.lexeme)
+
+            fields.add(Field(
+                name = idToken.lexeme,
+                type = dataType
+            ))
+
+            while (peek()!!.tokenType == TokenType.Semicolon) {
+                match(TokenType.Semicolon)
+
+                if (peek()!!.tokenType == TokenType.Identifier) {
+                    idToken = id()
+
+                    match(TokenType.Colon)
+                    dataType = dataType(idToken.lexeme)
+
+                    fields.add(Field(
+                        name = idToken.lexeme,
+                        type = dataType
+                    ))
+                }
+            }
         }
+
+        return fields
     }
 
     // [TIPO_DADO] => (integer)
@@ -205,31 +272,50 @@ class Parser(private val lex: Lex) {
     // [TIPO_DADO] => (array) ([) [NUMERO] (]) (of) [TIPO_DADO]
     // [TIPO_DADO] => (record) [CAMPOS] (end)
     // [TIPO_DADO] => [ID]
-    private fun dataType(): Token {
+    private fun dataType(name: String): DataType {
         val token = peek()!!
-        when (token.tokenType) {
-            TokenType.Integer -> match(TokenType.Integer)
+        return when (token.tokenType) {
+            TokenType.Integer -> Integer(match(TokenType.Integer).lexeme)
 
-            TokenType.Real -> match(TokenType.Real)
+            TokenType.Real -> Real(match(TokenType.Real).lexeme)
 
             TokenType.Array -> {
                 match(TokenType.Array)
                 match(TokenType.LeftBracket)
-                number()
+                val number = number()
                 match(TokenType.RightBracket)
                 match(TokenType.Of)
-                dataType()
+                val dataType = dataType("")
+
+                if (number !is Integer) {
+                    throw SyntacticException(
+                        token,
+                        TokenType.Integer
+                    )
+                }
+
+                Array(
+                    name = name,
+                    size = number.value,
+                    type = dataType
+                )
             }
 
             TokenType.Record -> {
                 match(TokenType.Record)
-                fields()
+                val fields = fields()
                 match(TokenType.End)
+
+                Record(
+                    name = name,
+                    fields = fields
+                )
             }
 
-            TokenType.Identifier -> match(TokenType.Identifier)
+            TokenType.Identifier -> CreateDataType(match(TokenType.Identifier).lexeme)
 
-            else -> syntacticError(
+            else -> throw SyntacticException(
+                token,
                 TokenType.Integer,
                 TokenType.Real,
                 TokenType.Array,
@@ -237,62 +323,87 @@ class Parser(private val lex: Lex) {
                 TokenType.Identifier
             )
         }
-
-        return token
     }
 
     // [FUNCAO] => (function) [NOME_FUNCAO] [BLOCO_FUNCAO]
-    private fun function() {
-        match(TokenType.Function)
-        functionName()
-        functionBloc()
-    }
-
     // [NOME_FUNCAO] => [ID] [PARAM_FUNC] (:) [TIPO_DADO]
-    private fun functionName() {
-        id()
-        functionParameter()
+    private fun function() : FunctionStat {
+        match(TokenType.Function)
+
+        val idToken = id()
+
+        val parameters = functionParameter()
         match(TokenType.Colon)
-        dataType()
+
+        val dataType = dataType(idToken.lexeme)
+
+        val bloc = functionBloc()
+
+        return FunctionStat(
+            name = idToken.lexeme,
+            type = dataType,
+            parameters = parameters,
+            bloc = bloc
+        )
     }
 
     // [PARAM_FUNC] => (() [CAMPOS] ())
     // [PARAM_FUNC] => Є
-    private fun functionParameter() {
+    private fun functionParameter() : MutableList<Field>{
+        var fields = mutableListOf<Field>()
+
         if (peek()!!.tokenType == TokenType.LeftParenthesis) {
             match(TokenType.LeftParenthesis)
-            fields()
+            fields = fields()
             match(TokenType.RightParenthesis)
         }
+
+        return fields
     }
 
     // [BLOCO_FUNCAO] => [DEF_VAR] (begin) [COMANDO] [LISTA_COM] (end)
-    private fun functionBloc() {
-        defVar()
+    private fun functionBloc() : Bloc {
+        val commands = ArrayList<AST>()
+
+        commands.addAll(defVar())
         match(TokenType.Begin)
-        command()
-        listCommand()
+        commands.add(command())
+        commands.addAll(listCommand())
         match(TokenType.End)
+
+        return Bloc(commands)
     }
 
     // [LISTA_COM] => (;) [COMANDO] [LISTA_COM]
     // [LISTA_COM] => Є
-    private fun listCommand() {
-        if (peek()!!.tokenType == TokenType.Semicolon) {
+    private fun listCommand() : MutableList<AST> {
+        val commands = ArrayList<AST>()
+
+        while (peek()!!.tokenType == TokenType.Semicolon) {
             match(TokenType.Semicolon)
-            command()
-            listCommand()
+            commands.add(command())
         }
+
+        return commands
     }
 
     // [BLOCO] => (begin) [COMANDO] [LISTA_COM] (end)
     // [BLOCO] => [COMANDO]
-    private fun bloc() {
-        when (peek()!!.tokenType) {
+    private fun bloc(): Bloc {
+        val commands = ArrayList<AST>()
+
+        val token = peek()!!
+
+        when (token.tokenType) {
             TokenType.Begin -> {
                 match(TokenType.Begin)
-                command()
-                listCommand()
+                commands.add(command())
+
+                while (peek()!!.tokenType == TokenType.Semicolon) {
+                    match(TokenType.Semicolon)
+                    commands.add(command())
+                }
+
                 match(TokenType.End)
             }
 
@@ -300,10 +411,85 @@ class Parser(private val lex: Lex) {
             TokenType.While,
             TokenType.If,
             TokenType.Write,
-            TokenType.Read -> command()
+            TokenType.Read -> commands.add(command())
 
-            else -> syntacticError(
+            else -> throw SyntacticException(
+                token,
                 TokenType.Begin,
+                TokenType.Identifier,
+                TokenType.While,
+                TokenType.If,
+                TokenType.Write,
+                TokenType.Read
+            )
+        }
+
+        return Bloc(commands)
+    }
+
+    // [COMANDO] => [ID] [NOME] (:=) [EXP_MAT]
+    // [COMANDO] => (while) [EXP_LOGICA] [BLOCO]
+    // [COMANDO] => (if) [EXP_LOGICA] (then) [BLOCO] [ELSE]
+    // [COMANDO] => (write) [CONST_VALOR]
+    // [COMANDO] => (read) [ID] [NOME]
+    private fun command(): AST {
+        val token = peek()!!
+
+        return when (token.tokenType) {
+            TokenType.Identifier -> {
+                id()
+                val left = name(token.lexeme)
+                match(TokenType.Assignment)
+                val right = expMath()
+
+                AssignmentOp(
+                    left = left,
+                    right = right
+                )
+            }
+
+            TokenType.While -> {
+                match(TokenType.While)
+                val condition = expLogical()
+                val bloc = bloc()
+
+                While(
+                    condition = condition,
+                    bloc = bloc
+                )
+            }
+
+            TokenType.If -> {
+                match(TokenType.If)
+                val condition = expLogical()
+                match(TokenType.Then)
+                val bloc = bloc()
+                val elseBloc = elseCommand()
+
+                If(
+                    condition = condition,
+                    bloc = bloc,
+                    elseBloc = elseBloc
+                )
+            }
+
+            TokenType.Write -> {
+                match(TokenType.Write)
+                val value = constValue()
+
+                Write(value)
+            }
+
+            TokenType.Read -> {
+                match(TokenType.Read)
+                id()
+                val varUsage = name(token.lexeme)
+
+                Read(varUsage)
+            }
+
+            else -> throw SyntacticException(
+                token,
                 TokenType.Identifier,
                 TokenType.While,
                 TokenType.If,
@@ -313,175 +499,127 @@ class Parser(private val lex: Lex) {
         }
     }
 
-    // [COMANDO] => [ID] [NOME] (:=) [EXP_MAT]
-    // [COMANDO] => (while) [EXP_LOGICA] [BLOCO]
-    // [COMANDO] => (if) [EXP_LOGICA] (then) [BLOCO] [ELSE]
-    // [COMANDO] => (write) [CONST_VALOR]
-    // [COMANDO] => (read) [ID] [NOME]
-    private fun command() {
-        when (peek()!!.tokenType) {
-            TokenType.Identifier -> {
-                id()
-                name()
-                match(TokenType.Assignment)
-                expMath()
-            }
-
-            TokenType.While -> {
-                match(TokenType.While)
-                expLogical()
-                bloc()
-            }
-
-            TokenType.If -> {
-                match(TokenType.If)
-                expLogical()
-                match(TokenType.Then)
-                bloc()
-                elseCommand()
-            }
-
-            TokenType.Write -> {
-                match(TokenType.Write)
-                constValue()
-            }
-
-            TokenType.Read -> {
-                match(TokenType.Read)
-                id()
-                name()
-            }
-
-            else -> syntacticError(TokenType.Identifier, TokenType.While, TokenType.If, TokenType.Write, TokenType.Read)
-        }
-    }
-
     // [ELSE] => (else) [BLOCO]
     // [ELSE] => Є
-    private fun elseCommand() {
+    private fun elseCommand(): Bloc? {
         if (peek()!!.tokenType == TokenType.Else) {
             match(TokenType.Else)
-            bloc()
+            return bloc()
         }
+
+        return null
     }
 
-    // [LISTA_PARAM] => [PARAMETRO] [LIST_PARAM_2]
+    // [LISTA_PARAM] => [PARAMETRO] (,) [LISTA_PARAM]
+    // [LISTA_PARAM] => [PARAMETRO]
     // [LISTA_PARAM] => Є
-    private fun listParameter() {
-        val token = peek()!!
-        val tokenType = token.tokenType
+    private fun listParameter(): MutableList<ParameterUsage> {
+        val listParameter = ArrayList<ParameterUsage>()
 
-        if (tokenType == TokenType.Integer || tokenType == TokenType.Real || tokenType == TokenType.Identifier) {
-            parameter()
-            listParameter2()
-        }
-    }
+        var token = peek()!!
 
-    // [LIST_PARAM_2] => (,) [LISTA_PARAM]
-    // [LIST_PARAM_2] => Є
-    private fun listParameter2() {
-        if (peek()!!.tokenType == TokenType.Comma) {
-            match(TokenType.Comma)
-            listParameter()
-        }
-    }
-
-    // [EXP_LOGICA] => [EXP_ MAT] [EXP_LOGICA_2]
-    private fun expLogical() {
-        val tokenType = peek()!!.tokenType
-        if (tokenType == TokenType.Integer || tokenType == TokenType.Real || tokenType == TokenType.Identifier) {
-            expMath()
-            expLogical2()
-        }
-    }
-
-    // [EXP_LOGICA_2] => [OP_LOGICO] [EXP_LOGICA]
-    // [EXP_LOGICA_2] => Є
-    private fun expLogical2() {
-        val tokenType = peek()!!.tokenType
-        if (tokenType == TokenType.Equal ||
-            tokenType == TokenType.LessThan ||
-            tokenType == TokenType.MoreThan ||
-            tokenType == TokenType.Exclamation
+        while (token.tokenType == TokenType.Integer
+            || token.tokenType == TokenType.Real
+            || token.tokenType == TokenType.Identifier
         ) {
-            opLogical()
-            expLogical()
+            val parameter = parameter()
+
+            listParameter.add(ParameterUsage(parameter.name))
+
+            if (peek()!!.tokenType == TokenType.Comma) {
+                match(TokenType.Comma)
+            }
+
+            token = peek()!!
+        }
+
+        return listParameter
+    }
+
+    // [EXP_LOGICA] => [EXP_ MAT] [OP_LOGICO] [EXP_LOGICA]
+    // [EXP_LOGICA] => [EXP_ MAT]
+    private fun expLogical(): AST {
+
+        val left = expMath()
+
+        val token = peek(1)!!
+
+        return when (token.tokenType) {
+            TokenType.LessThan -> {
+                match(TokenType.LessThan)
+                LessThan(left, expLogical())
+            }
+            TokenType.MoreThan -> {
+                match(TokenType.MoreThan)
+                MoreThan(left, expLogical())
+            }
+            TokenType.Equal -> {
+                match(TokenType.Equal)
+                Equal(left, expLogical())
+            }
+            TokenType.Exclamation -> {
+                match(TokenType.Exclamation)
+                Exclamation(left, expLogical())
+            }
+            else -> left
         }
     }
 
-    // [EXP_MAT] => [PARAMETRO] [EXP_MAT_2]
-    private fun expMath() {
-        val token = peek()!!
-        if (token.tokenType == TokenType.Integer || token.tokenType == TokenType.Real || token.tokenType == TokenType.Identifier) {
-            parameter()
-            expMath2()
-        }
-    }
+    // [EXP_MAT] => [PARAMETRO] [OP_ MAT] [EXP_ MAT]
+    // [EXP_MAT] => [PARAMETRO]
+    private fun expMath(): AST {
+        val left = parameter()
 
-    // [EXP_MAT] => [OP_ MAT] [EXP_ MAT]
-    // [EXP_MAT] => Є
-    private fun expMath2() {
-        val tokenType = peek()!!.tokenType
-        if (tokenType == TokenType.Plus ||
-            tokenType == TokenType.Minus ||
-            tokenType == TokenType.Times ||
-            tokenType == TokenType.Divider
-        ) {
-            opMath()
-            expMath()
+        val token = peek(1)!!
+
+        return when (token.tokenType) {
+            TokenType.Plus -> {
+                match(TokenType.Plus)
+                Plus(left, expMath())
+            }
+            TokenType.Minus -> {
+                match(TokenType.Minus)
+                Minus(left, expMath())
+            }
+            TokenType.Divider -> {
+                match(TokenType.Divider)
+                Div(left, expMath())
+            }
+            TokenType.Times -> {
+                match(TokenType.Times)
+                Mul(left, expMath())
+            }
+            else -> left
         }
     }
 
     // [PARAMETRO] => [ID] [NOME]
     // [PARAMETRO] => [NUMERO]
-    private fun parameter() {
-        when (peek()!!.tokenType) {
+    private fun parameter(): Usage {
+        val token = peek()!!
+
+        return when (token.tokenType) {
             TokenType.Identifier -> {
                 match(TokenType.Identifier)
-                name()
+                name(token.lexeme)
             }
 
-            TokenType.Integer -> match(TokenType.Integer)
+            TokenType.Integer -> {
+                match(TokenType.Integer)
+                Integer(value = token.lexeme)
+            }
 
-            TokenType.Real -> match(TokenType.Real)
+            TokenType.Real -> {
+                match(TokenType.Real)
+                Real(value = token.lexeme)
+            }
 
-            else -> syntacticError()
-        }
-    }
-
-    // [OP_LOGICO] => (>) | (<) | (=) | (!)
-    private fun opLogical() {
-        when (peek()!!.tokenType) {
-            TokenType.LessThan -> {
-                match(TokenType.LessThan)
-            }
-            TokenType.MoreThan -> {
-                match(TokenType.MoreThan)
-            }
-            TokenType.Equal -> {
-                match(TokenType.Equal)
-            }
-            TokenType.Exclamation -> {
-                match(TokenType.Exclamation)
-            }
-        }
-    }
-
-    // [OP_MAT] => (+) | (-) | (*) | (/)
-    private fun opMath() {
-        when (peek()!!.tokenType) {
-            TokenType.Plus -> {
-                match(TokenType.Plus)
-            }
-            TokenType.Minus -> {
-                match(TokenType.Minus)
-            }
-            TokenType.Divider -> {
-                match(TokenType.Divider)
-            }
-            TokenType.Times -> {
-                match(TokenType.Times)
-            }
+            else -> throw SyntacticException(
+                token,
+                TokenType.Identifier,
+                TokenType.Integer,
+                TokenType.Real
+            )
         }
     }
 
@@ -489,27 +627,35 @@ class Parser(private val lex: Lex) {
     // [NOME] => ([) [PARAMETRO] (])
     // [NOME] => (() [LISTA_PARAM] ())
     // [NOME] => Є
-    private fun name(){
+    private fun name(name: String): Usage {
         val nameToken = peek()!!
 
-        when (nameToken.tokenType) {
+        return when (nameToken.tokenType) {
             TokenType.Dot -> {
                 match(TokenType.Dot)
-                id()
-                name()
+                val idToken = id()
+                val child = name(idToken.lexeme)
+
+                RecordUsage(name = name, child = child)
             }
 
             TokenType.LeftBracket -> {
                 match(TokenType.LeftBracket)
-                parameter()
+                val varToken = parameter()
                 match(TokenType.RightBracket)
+
+                ArrayUsage(name = name, child = varToken)
             }
 
             TokenType.LeftParenthesis -> {
                 match(TokenType.LeftParenthesis)
-                listParameter()
+                val parameters = listParameter()
                 match(TokenType.RightParenthesis)
+
+                FunctionUsage(name = name, parameters = parameters)
             }
+
+            else -> EmptyDataType()
         }
     }
 }

@@ -30,7 +30,7 @@ begin
   end
 end
 
-function exp(a: integer; b: real): real
+function exp(a: real; b: real): real
 var
   i: integer;
 begin
