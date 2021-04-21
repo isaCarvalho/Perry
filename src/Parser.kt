@@ -3,8 +3,6 @@ class Parser(private val lex: Lex) {
     private val bufferTokens = ArrayList<Token>()
     private var isEnd = false
 
-    val scopes = Scopes()
-
     init {
         readToken()
     }
@@ -56,38 +54,10 @@ class Parser(private val lex: Lex) {
         )
     }
 
-    private fun variableNotDeclaredError(token: Token) {
-        var msg = "Semantic error: variable $token not declared"
-
-        val scope = scopes.getCurrentScope().name
-
-        if (scope != "global") {
-            msg += " in the scope of function '$scope'"
-        }
-
-        throw Exception(msg)
-    }
-
-    private fun unexpectedParameterError(functionName: String, expected : Int, found: Int) {
-        throw Exception("Semantic error: function '$functionName' was expecting $expected parameter(s), but $found found")
-    }
-
-    private fun invalidArrayError(name: String) {
-        throw Exception("Semantic error: $name is not an array")
-    }
-
-    private fun invalidRecordError(name: String) {
-        throw Exception("Semantic error: $name is not a record")
-    }
-
     // [PROGRAMA] => [DECLARACOES] [PRINCIPAL]
     fun program() {
-        scopes.createNewScope("global")
-
         declarations()
         mainFunction()
-
-        scopes.dropScope()
     }
 
     // [PRINCIPAL] => (begin) [COMANDO] [LISTA_COM] (end)
@@ -143,13 +113,13 @@ class Parser(private val lex: Lex) {
     }
 
     // [ID] => Seqüência alfanumérica iniciada por char (tratado no léxico)
-    private fun id(): Token {
-        return match(TokenType.Identifier)
+    private fun id() {
+        match(TokenType.Identifier)
     }
 
     // [NUMERO] => seqüência numérica com a ocorrência de no máximo um ponto (tratado no léxico)
     private fun number() {
-        when (val tokenType = peek()!!.tokenType) {
+        when (peek()!!.tokenType) {
             TokenType.Integer -> match(TokenType.Integer)
 
             TokenType.Real -> match(TokenType.Real)
@@ -161,74 +131,42 @@ class Parser(private val lex: Lex) {
     // [CONSTANTE] => (const) [ID] (=) [CONST_VALOR] (;)
     private fun constant() {
         match(TokenType.Const)
-
-        val idToken = id()
+        id()
         match(TokenType.Equal)
-
-        val valueToken = constValue()
+        constValue()
         match(TokenType.Semicolon)
-
-        scopes.getGlobalScope().insertSymbol(
-            idToken = idToken,
-            category = TokenType.Const,
-            valueToken = valueToken
-        )
     }
 
     // [CONST_VALOR] => Seqüência alfanumérica iniciada por aspas e terminada em aspas (tratado no léxico)
     // [CONST_VALOR] => [EXP_MAT]
-    private fun constValue(): Token? {
+    private fun constValue() {
         val tokenType = peek()!!.tokenType
         if (tokenType == TokenType.Text) {
-            return match(TokenType.Text)
+            match(TokenType.Text)
         } else if (tokenType == TokenType.Identifier || tokenType == TokenType.Integer || tokenType == TokenType.Real) {
-            return expMath()
+            expMath()
         } else {
             syntacticError(TokenType.Identifier, TokenType.Integer, TokenType.Real, TokenType.Text)
         }
-
-        return null
     }
 
     // [TIPO] => (type) [ID] (=) [TIPO_DADO] (;)
     private fun type() {
         match(TokenType.Type)
-
-        val idToken = id()
+        id()
         match(TokenType.Equal)
-
-        val dataTypeToken = dataType()
+        dataType()
         match(TokenType.Semicolon)
-
-        scopes.getGlobalScope().insertSymbol(
-            idToken = idToken,
-            category = TokenType.Type,
-            valueToken = dataTypeToken
-        )
     }
 
     // [VARIAVEL] => (var) [ID] [LISTA_ID] (:) [TIPO_DADO] (;)
     private fun variable() {
         match(TokenType.Var)
-
-        val idToken = id()
-        scopes.getCurrentScope().addIdentifier(idToken)
-
+        id()
         idList()
         match(TokenType.Colon)
-
-        val dataTypeToken = dataType()
+        dataType()
         match(TokenType.Semicolon)
-
-        scopes.getCurrentScope().identifiers.forEach {
-            scopes.getCurrentScope().insertSymbol(
-                idToken = it,
-                category = TokenType.Var,
-                valueToken = dataTypeToken
-            )
-        }
-
-        scopes.getCurrentScope().clearIdentifiers()
     }
 
     // [LISTA_ID] => (,) [ID] [LISTA_ID]
@@ -236,39 +174,29 @@ class Parser(private val lex: Lex) {
     private fun idList() {
         if (peek()!!.tokenType == TokenType.Comma) {
             match(TokenType.Comma)
-            val idToken = id()
-
-            scopes.getCurrentScope().addIdentifier(idToken)
+            id()
             idList()
         }
     }
 
     // [CAMPOS] => [ID] (:) [TIPO_DADO] [LISTA_CAMPOS]
     // [CAMPOS] => Є
-    private fun fields(isParameters: Boolean = false) {
+    private fun fields() {
         if (peek()!!.tokenType == TokenType.Identifier) {
-            val idToken = id()
-
+            id()
             match(TokenType.Colon)
-
-            val dataTypeToken = dataType()
-
-            if (isParameters) {
-                scopes.getCurrentScope().addParameter(idToken, dataTypeToken)
-                fieldList(true)
-            } else {
-                fieldList()
-            }
+            dataType()
+            fieldList()
         }
     }
 
     // [LISTA_CAMPOS] => (;) [CAMPOS] [LISTA_CAMPOS]
     // [LISTA_CAMPOS] => Є
-    private fun fieldList(isParameters: Boolean = false) {
+    private fun fieldList() {
         if (peek()!!.tokenType == TokenType.Semicolon) {
             match(TokenType.Semicolon)
-            fields(isParameters)
-            fieldList(isParameters)
+            fields()
+            fieldList()
         }
     }
 
@@ -316,57 +244,26 @@ class Parser(private val lex: Lex) {
     // [FUNCAO] => (function) [NOME_FUNCAO] [BLOCO_FUNCAO]
     private fun function() {
         match(TokenType.Function)
-
         functionName()
         functionBloc()
-
-        scopes.dropScope()
     }
 
     // [NOME_FUNCAO] => [ID] [PARAM_FUNC] (:) [TIPO_DADO]
     private fun functionName() {
-        val idToken = id()
-
-        scopes.createNewScope(idToken.lexeme)
-
-        val parameterSize = functionParameter(idToken.lexeme)
+        id()
+        functionParameter()
         match(TokenType.Colon)
-
-        val dataTypeToken = dataType()
-
-        scopes.getGlobalScope().insertSymbol(
-            idToken = idToken,
-            valueToken = dataTypeToken,
-            category = TokenType.Function,
-            parameterSize = parameterSize
-        )
+        dataType()
     }
 
     // [PARAM_FUNC] => (() [CAMPOS] ())
     // [PARAM_FUNC] => Є
-    private fun functionParameter(functionName: String): Int {
-        var parameterSize = 0
-
+    private fun functionParameter() {
         if (peek()!!.tokenType == TokenType.LeftParenthesis) {
             match(TokenType.LeftParenthesis)
-            fields(true)
-
-            scopes.getCurrentScope().parameters.forEach {
-
-                scopes.getCurrentScope().insertSymbol(
-                    idToken = it.key,
-                    category = it.key.tokenType,
-                    valueToken = it.value
-                )
-            }
-
-            parameterSize = scopes.getCurrentScope().parameters.size
-
+            fields()
             match(TokenType.RightParenthesis)
-            scopes.getCurrentScope().clearParameter()
         }
-
-        return parameterSize
     }
 
     // [BLOCO_FUNCAO] => [DEF_VAR] (begin) [COMANDO] [LISTA_COM] (end)
@@ -391,7 +288,7 @@ class Parser(private val lex: Lex) {
     // [BLOCO] => (begin) [COMANDO] [LISTA_COM] (end)
     // [BLOCO] => [COMANDO]
     private fun bloc() {
-        when (val tokenType = peek()!!.tokenType) {
+        when (peek()!!.tokenType) {
             TokenType.Begin -> {
                 match(TokenType.Begin)
                 command()
@@ -422,15 +319,10 @@ class Parser(private val lex: Lex) {
     // [COMANDO] => (write) [CONST_VALOR]
     // [COMANDO] => (read) [ID] [NOME]
     private fun command() {
-        when (val tokenType = peek()!!.tokenType) {
+        when (peek()!!.tokenType) {
             TokenType.Identifier -> {
-                val idToken = id()
-
-                if (!scopes.matchNestedScopes(idToken.lexeme)) {
-                    variableNotDeclaredError(idToken)
-                }
-
-                name(idToken.lexeme)
+                id()
+                name()
                 match(TokenType.Assignment)
                 expMath()
             }
@@ -456,8 +348,8 @@ class Parser(private val lex: Lex) {
 
             TokenType.Read -> {
                 match(TokenType.Read)
-                val idToken = id()
-                name(idToken.lexeme)
+                id()
+                name()
             }
 
             else -> syntacticError(TokenType.Identifier, TokenType.While, TokenType.If, TokenType.Write, TokenType.Read)
@@ -480,7 +372,7 @@ class Parser(private val lex: Lex) {
         val tokenType = token.tokenType
 
         if (tokenType == TokenType.Integer || tokenType == TokenType.Real || tokenType == TokenType.Identifier) {
-            parameter(true)
+            parameter()
             listParameter2()
         }
     }
@@ -518,14 +410,12 @@ class Parser(private val lex: Lex) {
     }
 
     // [EXP_MAT] => [PARAMETRO] [EXP_MAT_2]
-    private fun expMath(): Token {
+    private fun expMath() {
         val token = peek()!!
         if (token.tokenType == TokenType.Integer || token.tokenType == TokenType.Real || token.tokenType == TokenType.Identifier) {
             parameter()
             expMath2()
         }
-
-        return token
     }
 
     // [EXP_MAT] => [OP_ MAT] [EXP_ MAT]
@@ -544,25 +434,18 @@ class Parser(private val lex: Lex) {
 
     // [PARAMETRO] => [ID] [NOME]
     // [PARAMETRO] => [NUMERO]
-    private fun parameter(isListParameter: Boolean = false) {
-        val token = peek()!!
-        var dataTypeToken: Token? = null
-
-        when (token.tokenType) {
+    private fun parameter() {
+        when (peek()!!.tokenType) {
             TokenType.Identifier -> {
-                dataTypeToken = match(TokenType.Identifier)
-                name(token.lexeme)
+                match(TokenType.Identifier)
+                name()
             }
 
-            TokenType.Integer -> dataTypeToken = match(TokenType.Integer)
+            TokenType.Integer -> match(TokenType.Integer)
 
-            TokenType.Real -> dataTypeToken = match(TokenType.Real)
+            TokenType.Real -> match(TokenType.Real)
 
             else -> syntacticError()
-        }
-
-        if (isListParameter) {
-            scopes.getGlobalScope().addParameter(token, dataTypeToken!!)
         }
     }
 
@@ -606,71 +489,27 @@ class Parser(private val lex: Lex) {
     // [NOME] => ([) [PARAMETRO] (])
     // [NOME] => (() [LISTA_PARAM] ())
     // [NOME] => Є
-    private fun name(name: String) {
-        when (peek()!!.tokenType) {
+    private fun name(){
+        val nameToken = peek()!!
+
+        when (nameToken.tokenType) {
             TokenType.Dot -> {
                 match(TokenType.Dot)
-                val idToken = id()
-
-                if (!validateType(name, TokenType.Record)) {
-                    invalidRecordError(name)
-                }
-
-                name(idToken.lexeme)
+                id()
+                name()
             }
+
             TokenType.LeftBracket -> {
                 match(TokenType.LeftBracket)
                 parameter()
                 match(TokenType.RightBracket)
-
-                if (!validateType(name, TokenType.Array)) {
-                    invalidArrayError(name)
-                }
             }
+
             TokenType.LeftParenthesis -> {
                 match(TokenType.LeftParenthesis)
                 listParameter()
-
-                validateParametersSize(name)
-
                 match(TokenType.RightParenthesis)
             }
         }
-    }
-
-    private fun validateParametersSize(name: String) {
-        // Verifica se o numero de parqmetros passados pra função é igual ao declarado
-        val global = scopes.getGlobalScope()
-        val expected = global.getSymbol(name)!!.parameterSize
-        val found = global.parameters.size
-        if (found != expected) {
-            unexpectedParameterError(name, expected!!, found)
-        }
-        scopes.getGlobalScope().clearParameter()
-    }
-
-    private fun validateType(name: String, type: TokenType) : Boolean {
-        var isValid = false
-        scopes.goThoughtAlignScopes().forEach {
-            val symbol = it.getSymbol(name)
-            if (symbol != null) {
-                isValid = when {
-                    symbol.type == type.toString() -> {
-                        true
-                    }
-                    TokenType.values().joinToString(",").contains(symbol.type.toString()) -> {
-                        false
-                    }
-                    else -> {
-                        validateType(symbol.type.toString(), type)
-                    }
-                }
-
-                if (isValid)
-                    return@forEach
-            }
-        }
-
-        return isValid
     }
 }

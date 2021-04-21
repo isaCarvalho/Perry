@@ -4,6 +4,10 @@ const TAM = 10.0;
 
 type vetor = array [15] of integer;
 
+type aluno = record
+  nota1: real;
+  nota2: real;
+end;
 
 var A, B, C, D: integer;
 
@@ -26,7 +30,7 @@ begin
   end
 end
 
-function exp(a: real; b: real): real
+function exp(a: integer; b: real): real
 var
   i: integer;
 begin
