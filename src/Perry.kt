@@ -5,5 +5,5 @@ fun main() {
 
     ast.visit()
 
-    print("s2")
+    print("Perry Compiler")
 }

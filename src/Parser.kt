@@ -246,7 +246,7 @@ class Parser(private val lex: Lex) {
 
             fields.add(Field(
                 name = idToken.lexeme,
-                type = dataType
+                dataType = dataType
             ))
 
             while (peek()!!.tokenType == TokenType.Semicolon) {
@@ -260,7 +260,7 @@ class Parser(private val lex: Lex) {
 
                     fields.add(Field(
                         name = idToken.lexeme,
-                        type = dataType
+                        dataType = dataType
                     ))
                 }
             }
@@ -299,7 +299,7 @@ class Parser(private val lex: Lex) {
                 Array(
                     name = name,
                     size = number.value,
-                    type = dataType
+                    dataType = dataType
                 )
             }
 
@@ -515,8 +515,8 @@ class Parser(private val lex: Lex) {
     // [LISTA_PARAM] => [PARAMETRO] (,) [LISTA_PARAM]
     // [LISTA_PARAM] => [PARAMETRO]
     // [LISTA_PARAM] => Є
-    private fun listParameter(): MutableList<ParameterUsage> {
-        val listParameter = ArrayList<ParameterUsage>()
+    private fun listParameter(): MutableList<Usage> {
+        val listParameter = mutableListOf<Usage>()
 
         var token = peek()!!
 
@@ -526,7 +526,7 @@ class Parser(private val lex: Lex) {
         ) {
             val parameter = parameter()
 
-            listParameter.add(ParameterUsage(parameter.name))
+            listParameter.add(parameter)
 
             if (peek()!!.tokenType == TokenType.Comma) {
                 match(TokenType.Comma)
@@ -540,7 +540,7 @@ class Parser(private val lex: Lex) {
 
     // [EXP_LOGICA] => [EXP_ MAT] [OP_LOGICO] [EXP_LOGICA]
     // [EXP_LOGICA] => [EXP_ MAT]
-    private fun expLogical(): AST {
+    private fun expLogical(): Usage {
 
         val left = expMath()
 
@@ -569,7 +569,7 @@ class Parser(private val lex: Lex) {
 
     // [EXP_MAT] => [PARAMETRO] [OP_ MAT] [EXP_ MAT]
     // [EXP_MAT] => [PARAMETRO]
-    private fun expMath(): AST {
+    private fun expMath(): Usage {
         val left = parameter()
 
         val token = peek(1)!!

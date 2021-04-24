@@ -1,3 +1,5 @@
+import kotlin.reflect.typeOf
+
 var currentScope: ScopedSymbolTable? = null
 
 interface AST {
@@ -65,7 +67,7 @@ class FunctionStat(
         val functionSymbol = FunctionSymbol(name)
 
         // valida o tipo de retorno da função
-        var typeName = type::class.java.simpleName.toString().toLowerCase()
+        var typeName = type.getClassName()
         functionSymbol.type = currentScope!!.lookup(typeName) ?: throw UnexpectedTypeException(typeName)
 
         currentScope?.insert(functionSymbol)
@@ -80,7 +82,7 @@ class FunctionStat(
 
         // adiciona os parametros no escopo da função
         parameters.forEach {
-            typeName = it.type::class.java.simpleName.toString().toLowerCase()
+            typeName = it.dataType.getClassName()
             val typeSymbol = currentScope!!.lookup(typeName) ?: throw UnexpectedTypeException(typeName)
 
             val varSymbol = VarSymbol(it.name, typeSymbol)
@@ -112,77 +114,85 @@ class TypeStat(
 /** Binary Operators **/
 
 abstract class BinOp(
-    open val left: AST,
-    open val right: AST,
-    open val operator: String
-) : AST {
+    open val left: Usage,
+    open val right: Usage,
+    operator: String
+) : Usage(operator), AST {
+    override var type: String? = null
+
     override fun visit() {
         left.visit()
         right.visit()
+
+        if (left.type != right.type) {
+            throw TypeMismatchException(left.name, left.type ?: "-", right.type ?: "-")
+        } else {
+            type = left.type
+        }
     }
 }
 
 // Math Operators
 
 abstract class MathOp(
-    override val left: AST,
-    override val right: AST,
-    override val operator: String
+    override val left: Usage,
+    override val right: Usage,
+    operator: String
 ) : BinOp(left, right, operator)
 
 class Plus(
-    override val left: AST,
-    override val right: AST
+    override val left: Usage,
+    override val right: Usage
 ) : MathOp(left, right, "+")
 
 class Minus(
-    override val left: AST,
-    override val right: AST
+    override val left: Usage,
+    override val right: Usage
 ) : MathOp(left, right, "-")
 
 class Mul(
-    override val left: AST,
-    override val right: AST
+    override val left: Usage,
+    override val right: Usage
 ) : MathOp(left, right, "*")
 
 class Div(
-    override val left: AST,
-    override val right: AST
+    override val left: Usage,
+    override val right: Usage
 ) : MathOp(left, right, "/")
 
 // Logical Operators
 
 abstract class LogicalOp(
-    override val left: AST,
-    override val right: AST,
-    override val operator: String
+    override val left: Usage,
+    override val right: Usage,
+    operator: String
 ) : BinOp(left, right, operator)
 
 class LessThan(
-    override val left: AST,
-    override val right: AST
+    override val left: Usage,
+    override val right: Usage
 ) : LogicalOp(left, right, "<")
 
 class MoreThan(
-    override val left: AST,
-    override val right: AST
+    override val left: Usage,
+    override val right: Usage
 ) : LogicalOp(left, right, ">")
 
 class Exclamation(
-    override val left: AST,
-    override val right: AST
+    override val left: Usage,
+    override val right: Usage
 ) : LogicalOp(left, right, "!")
 
 class Equal(
-    override val left: AST,
-    override val right: AST
+    override val left: Usage,
+    override val right: Usage
 ) : LogicalOp(left, right, "=")
 
 // Assignment Operator
 
 class AssignmentOp(
-    override val left: AST,
-    override val right: AST
+    override val left: Usage,
+    override val right: Usage
 ) : BinOp(left, right, ":=")
 
 /** Command Blocs **/
@@ -256,6 +266,9 @@ class Read(
 
 interface DataType : AST
 
+// extention function to get the class' name
+fun AST.getClassName() = this::class.java.simpleName.toString().toLowerCase()
+
 class CreateDataType(
     override val name: String
 ) : DataType, Usage(name) {
@@ -269,6 +282,8 @@ class CreateDataType(
 class Text(
     override val name: String
 ) : DataType, Usage(name) {
+    override var type: String = "text"
+
     override fun visit() {
     }
 }
@@ -276,6 +291,8 @@ class Text(
 class Integer(
     val value: String
 ) : DataType, Usage(value) {
+    override var type: String = "integer"
+
     override fun visit() {
     }
 
@@ -285,6 +302,8 @@ class Integer(
 class Real(
     val value: String
 ) : DataType, Usage(value) {
+    override var type: String = "real"
+
     override fun visit() {
 
     }
@@ -295,8 +314,19 @@ class Real(
 class Array(
     override val name: String,
     val size: String,
-    val type: DataType
+    val dataType: DataType
 ) : DataType, Usage(name) {
+
+    override var type: String? = null
+
+    init {
+        type = if (dataType is CreateDataType) {
+            currentScope?.lookup(dataType.name)?.name
+        } else {
+            dataType.getClassName()
+        }
+    }
+
     override fun visit() {
 
     }
@@ -306,13 +336,23 @@ class Array(
 
 class Field(
     override val name: String,
-    val type: DataType
+    val dataType: DataType
 ) : DataType, Usage(name) {
+    override var type: String? = null
+
+    init {
+        type = if (dataType is CreateDataType) {
+            currentScope?.lookup(dataType.name)?.name
+        } else {
+            dataType.getClassName()
+        }
+    }
+
     override fun visit() {
 
     }
 
-    override fun toString(): String = type.toString()
+    override fun toString(): String = dataType.toString()
 }
 
 class Record(
@@ -326,22 +366,20 @@ class Record(
     override fun toString(): String = "record"
 }
 
-class EmptyDataType : DataType, Usage("") {
-    override fun visit() {
-
-    }
-}
-
 /** Usage Classes **/
 
 abstract class Usage(
-    open val name: String
-) : AST
+    open val name: String,
+) : AST {
+    open val type: String? = null
+}
 
 class RecordUsage(
     override val name: String,
     val child: Usage
 ) : Usage(name) {
+    override val type: String = "record"
+
     override fun visit() {
 
     }
@@ -351,6 +389,8 @@ class ArrayUsage(
     override val name: String,
     val child: Usage
 ) : Usage(name) {
+    override val type: String = "array"
+
     override fun visit() {
 
     }
@@ -359,23 +399,22 @@ class ArrayUsage(
 class VarUsage(
     override val name: String
 ) : Usage(name) {
+    override var type : String? = null
+
     override fun visit() {
+        val varSymbol = currentScope?.lookup(name) ?:
+            throw UnexpectedVariableException(name)
 
-    }
-}
-
-class ParameterUsage(
-    override val name: String
-) : Usage(name) {
-    override fun visit() {
-
+        type = varSymbol.type?.name
     }
 }
 
 class FunctionUsage(
     override val name: String,
-    val parameters: MutableList<ParameterUsage>
+    val parameters: MutableList<Usage>
 ) : Usage(name) {
+    override var type : String? = null
+
     override fun visit() {
         val functionSymbol = currentScope?.lookup(name, false) ?:
             throw FunctionNotDeclaredException(name)
@@ -390,6 +429,7 @@ class FunctionUsage(
             throw UnexpectedParameterSizeException(name, expected, found)
         }
 
+        type = functionSymbol.type?.name
         parameters.forEach { it.visit() }
     }
 }

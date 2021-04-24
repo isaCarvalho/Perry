@@ -1,6 +1,6 @@
 { Meu programa em Pascal }
 
-const TAM = 10.0;
+const TAM = 10;
 
 type vetor = array [15] of integer;
 
@@ -31,6 +31,6 @@ begin
 end
 
 begin
-  A := TAM + 20;
-  B := result(A)
+  A := TAM + 20 + 1;
+  B := fatorial(fatorial(A))
 end
