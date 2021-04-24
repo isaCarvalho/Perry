@@ -1,3 +1,5 @@
+var currentScope: ScopedSymbolTable? = null
+
 interface AST {
     fun visit()
 }
@@ -14,16 +16,17 @@ class VarStat(
     override val type: DataType
 ) : Statement(name, type) {
     override fun visit() {
-        if (SymbolTable.lookup(name) != null) {
+        if (currentScope?.lookup(name, true) != null) {
             throw VariableAlreadyDeclaredException(varName = name)
         }
 
-        val typeSymbol = SymbolTable.lookup(type.toString()) ?: throw UnexpectedTypeException(type.toString())
+        val typeSymbol = currentScope?.lookup(type.toString(), true) ?:
+            throw UnexpectedTypeException(type.toString())
 
         val symbol = VarSymbol(name, typeSymbol)
         symbol.category = "var"
 
-        SymbolTable.insert(symbol)
+        currentScope?.insert(symbol)
     }
 }
 
@@ -32,17 +35,17 @@ class ConstStat(
     val ast: AST
 ) : Statement(name, CreateDataType("")) {
     override fun visit() {
-        if (SymbolTable.lookup(name) != null) {
+        if (currentScope?.lookup(name) != null) {
             throw ConstantAlreadyDeclaredException(name)
         }
 
         val typeName = ast::class.java.simpleName.toString().toLowerCase()
-        val typeSymbol = SymbolTable.lookup(typeName) ?: throw UnexpectedTypeException(type.toString())
+        val typeSymbol = currentScope?.lookup(typeName) ?: throw UnexpectedTypeException(type.toString())
 
         val symbol = ConstSymbol(name, typeSymbol)
         symbol.category = "const"
 
-        SymbolTable.insert(symbol)
+        currentScope?.insert(symbol)
     }
 }
 
@@ -53,7 +56,40 @@ class FunctionStat(
     val bloc: Bloc
 ) : Statement(name, type) {
     override fun visit() {
+        // Verifica se a função já foi declarada
+        if (currentScope?.lookup(name) != null) {
+            throw FunctionAlreadyDeclaredException(name)
+        }
 
+        // insere a declaração da função no escopo atual
+        val functionSymbol = FunctionSymbol(name)
+
+        // valida o tipo de retorno da função
+        var typeName = type::class.java.simpleName.toString().toLowerCase()
+        functionSymbol.type = currentScope!!.lookup(typeName) ?: throw UnexpectedTypeException(typeName)
+
+        currentScope?.insert(functionSymbol)
+
+        // cria um novo escopo
+        val functionScope = ScopedSymbolTable(
+            scopeName = name,
+            scopeLevel = 2,
+            enclosingScope = currentScope
+        )
+        currentScope = functionScope
+
+        // adiciona os parametros no escopo da função
+        parameters.forEach {
+            typeName = it.type::class.java.simpleName.toString().toLowerCase()
+            val typeSymbol = currentScope!!.lookup(typeName) ?: throw UnexpectedTypeException(typeName)
+
+            val varSymbol = VarSymbol(it.name, typeSymbol)
+            currentScope?.insert(varSymbol)
+            functionSymbol.parameters.add(varSymbol)
+        }
+
+        bloc.visit()
+        currentScope = currentScope?.enclosingScope
     }
 }
 
@@ -62,14 +98,14 @@ class TypeStat(
     override val type: DataType,
 ) : Statement(name, type) {
     override fun visit() {
-        if (SymbolTable.lookup(name) != null) {
+        if (currentScope?.lookup(name) != null) {
             throw TypeAlreadyDeclaredException(name)
         }
 
         val symbol = BuiltInType(name)
         symbol.category = "type"
 
-        SymbolTable.insert(symbol)
+        currentScope?.insert(symbol)
     }
 }
 
@@ -156,8 +192,17 @@ class Program(
     private val bloc: Bloc
 ) : AST {
     override fun visit() {
+
+        currentScope = ScopedSymbolTable(
+            scopeName = "global",
+            scopeLevel = 1,
+            enclosingScope = currentScope
+        )
+
         statements.forEach { it.visit() }
         bloc.visit()
+
+        currentScope = currentScope?.enclosingScope
     }
 }
 
@@ -215,7 +260,7 @@ class CreateDataType(
     override val name: String
 ) : DataType, Usage(name) {
     override fun visit() {
-        SymbolTable.insert(BuiltInType(name))
+        currentScope?.insert(BuiltInType(name))
     }
 
     override fun toString(): String = name

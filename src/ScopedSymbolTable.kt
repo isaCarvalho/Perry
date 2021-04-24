@@ -23,7 +23,17 @@ class VarSymbol(override val name: String, override var type: Symbol?) : Symbol(
     }
 }
 
-object SymbolTable {
+class FunctionSymbol(
+    override val name: String
+) : Symbol(name) {
+    val parameters : MutableList<Symbol> = mutableListOf()
+}
+
+class ScopedSymbolTable(
+    val scopeName : String,
+    val scopeLevel : Int,
+    val enclosingScope : ScopedSymbolTable? = null
+) {
     private val symbolTable = LinkedHashMap<String, Symbol>()
 
     init {
@@ -37,5 +47,15 @@ object SymbolTable {
         symbolTable[symbol.name] = symbol
     }
 
-    fun lookup(name: String) = symbolTable[name]
+    fun lookup(name: String, currentScopeOnly : Boolean = false) : Symbol? {
+        val symbol = symbolTable[name]
+        if (symbol != null)
+            return symbol
+
+        if (currentScopeOnly) {
+            return null
+        }
+
+        return enclosingScope?.lookup(name)
+    }
 }
