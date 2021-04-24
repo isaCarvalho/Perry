@@ -655,7 +655,7 @@ class Parser(private val lex: Lex) {
                 FunctionUsage(name = name, parameters = parameters)
             }
 
-            else -> EmptyDataType()
+            else -> VarUsage(name)
         }
     }
 }
