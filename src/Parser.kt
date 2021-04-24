@@ -1,3 +1,5 @@
+import exceptions.ParserException
+
 @Suppress("NON_EXHAUSTIVE_WHEN")
 class Parser(private val lex: Lex) {
     private val bufferTokens = ArrayList<Token>()
@@ -44,7 +46,7 @@ class Parser(private val lex: Lex) {
             println("Match: ${token.tokenType}")
             readToken()
         } else {
-            throw SyntacticException(token, type)
+            throw ParserException(token, type)
         }
 
         return token
@@ -144,7 +146,7 @@ class Parser(private val lex: Lex) {
 
             TokenType.Real -> Real(match(TokenType.Real).lexeme)
 
-            else -> throw SyntacticException(token, TokenType.Integer, TokenType.Real)
+            else -> throw ParserException(token, TokenType.Integer, TokenType.Real)
         }
     }
 
@@ -174,7 +176,7 @@ class Parser(private val lex: Lex) {
         } else if (tokenType == TokenType.Identifier || tokenType == TokenType.Integer || tokenType == TokenType.Real) {
             return expMath()
         } else {
-            throw SyntacticException(
+            throw ParserException(
                 token,
                 TokenType.Identifier,
                 TokenType.Integer,
@@ -288,7 +290,7 @@ class Parser(private val lex: Lex) {
                 val dataType = dataType("")
 
                 if (number !is Integer) {
-                    throw SyntacticException(
+                    throw ParserException(
                         token,
                         TokenType.Integer
                     )
@@ -314,7 +316,7 @@ class Parser(private val lex: Lex) {
 
             TokenType.Identifier -> CreateDataType(match(TokenType.Identifier).lexeme)
 
-            else -> throw SyntacticException(
+            else -> throw ParserException(
                 token,
                 TokenType.Integer,
                 TokenType.Real,
@@ -413,7 +415,7 @@ class Parser(private val lex: Lex) {
             TokenType.Write,
             TokenType.Read -> commands.add(command())
 
-            else -> throw SyntacticException(
+            else -> throw ParserException(
                 token,
                 TokenType.Begin,
                 TokenType.Identifier,
@@ -488,7 +490,7 @@ class Parser(private val lex: Lex) {
                 Read(varUsage)
             }
 
-            else -> throw SyntacticException(
+            else -> throw ParserException(
                 token,
                 TokenType.Identifier,
                 TokenType.While,
@@ -614,7 +616,7 @@ class Parser(private val lex: Lex) {
                 Real(value = token.lexeme)
             }
 
-            else -> throw SyntacticException(
+            else -> throw ParserException(
                 token,
                 TokenType.Identifier,
                 TokenType.Integer,

@@ -1,3 +1,6 @@
+import exceptions.TokenNotFoundException
+import exceptions.UnexcpetedTokenException
+
 class Lex(fileName: String) {
     private var fileReader = Buffer(fileName)
 
@@ -59,7 +62,11 @@ class Lex(fileName: String) {
             return nextToken!!
         }
 
-        throw Exception("Lexical error")
+        if (nextToken == null) {
+            throw TokenNotFoundException()
+        } else {
+            throw UnexcpetedTokenException(nextToken)
+        }
     }
 
     private fun text(): Token? {

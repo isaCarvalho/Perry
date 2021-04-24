@@ -32,5 +32,5 @@ end
 
 begin
   A := TAM + 20;
-  B := fatorial(A)
+  B := result(A)
 end

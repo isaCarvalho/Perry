@@ -377,6 +377,19 @@ class FunctionUsage(
     val parameters: MutableList<ParameterUsage>
 ) : Usage(name) {
     override fun visit() {
+        val functionSymbol = currentScope?.lookup(name, false) ?:
+            throw FunctionNotDeclaredException(name)
 
+        if (functionSymbol !is FunctionSymbol) {
+            throw DeclaredNameIsNotAFunctionException(name)
+        }
+
+        val expected = functionSymbol.parameters.size
+        val found = parameters.size
+        if (expected != found) {
+            throw UnexpectedParameterSizeException(name, expected, found)
+        }
+
+        parameters.forEach { it.visit() }
     }
 }
