@@ -53,7 +53,7 @@ class Parser(private val lex: Lex) {
     }
 
     // [PROGRAMA] => [DECLARACOES] [PRINCIPAL]
-    fun program() : Program {
+    fun program(): Program {
         val statements: MutableList<Statement> = statements()
         val bloc = mainFunction()
 
@@ -61,7 +61,7 @@ class Parser(private val lex: Lex) {
     }
 
     // [PRINCIPAL] => (begin) [COMANDO] [LISTA_COM] (end)
-    private fun mainFunction() : Bloc {
+    private fun mainFunction(): Bloc {
         val commands = ArrayList<AST>()
 
         match(TokenType.Begin)
@@ -73,7 +73,7 @@ class Parser(private val lex: Lex) {
     }
 
     // [DECLARACOES] => [DEF_CONST] [DEF_TIPOS] [DEF_VAR] [DEF_FUNC]
-    private fun statements() : MutableList<Statement> {
+    private fun statements(): MutableList<Statement> {
         val statements = ArrayList<Statement>()
 
         statements.addAll(defConst())
@@ -86,7 +86,7 @@ class Parser(private val lex: Lex) {
 
     // [DEF_CONST] => [CONSTANTE] [DEF_CONST]
     // [DEF_CONST] => Є
-    private fun defConst() : MutableList<ConstStat> {
+    private fun defConst(): MutableList<ConstStat> {
         val constants = ArrayList<ConstStat>()
 
         while (peek()!!.tokenType == TokenType.Const) {
@@ -98,8 +98,8 @@ class Parser(private val lex: Lex) {
 
     // [DEF_TIPOS] => [TIPO] [DEF_TIPOS]
     // [DEF_TIPOS] => Є
-    private fun defTypes() : MutableList<TypeStat> {
-        val types = ArrayList<TypeStat>()
+    private fun defTypes(): MutableList<Statement> {
+        val types = ArrayList<Statement>()
 
         while (peek()!!.tokenType == TokenType.Type) {
             types.add(type())
@@ -110,7 +110,7 @@ class Parser(private val lex: Lex) {
 
     // [DEF_VAR] => [VARIAVEL] [DEF_VAR]
     // [DEF_VAR] => Є
-    private fun defVar() : MutableList<VarStat>{
+    private fun defVar(): MutableList<VarStat> {
         val vars = ArrayList<VarStat>()
 
         while (peek()!!.tokenType == TokenType.Var) {
@@ -122,7 +122,7 @@ class Parser(private val lex: Lex) {
 
     // [DEF_FUNC] => [FUNCAO] [DEF_FUNC]
     // [DEF_FUNC] => Є
-    private fun defFunc() : MutableList<FunctionStat> {
+    private fun defFunc(): MutableList<FunctionStat> {
         val functions = ArrayList<FunctionStat>()
 
         while (peek()!!.tokenType == TokenType.Function) {
@@ -187,21 +187,35 @@ class Parser(private val lex: Lex) {
     }
 
     // [TIPO] => (type) [ID] (=) [TIPO_DADO] (;)
-    private fun type() : TypeStat {
+    private fun type(): Statement {
         match(TokenType.Type)
         val idToken = id()
         match(TokenType.Equal)
         val dataType = dataType(idToken.lexeme)
         match(TokenType.Semicolon)
 
-        return TypeStat(
-            name = idToken.lexeme,
-            type = dataType
-        )
+        return when (dataType) {
+            is Array -> ArrayStat(
+                name = idToken.lexeme,
+                type = dataType.dataType,
+                size = dataType.size.toInt()
+            )
+
+            is Record -> RecordStat(
+                name = idToken.lexeme,
+                fields = dataType.fields,
+                type = dataType
+            )
+
+            else -> TypeStat(
+                name = idToken.lexeme,
+                type = dataType
+            )
+        }
     }
 
     // [VARIAVEL] => (var) [ID] [LISTA_ID] (:) [TIPO_DADO] (;)
-    private fun variable() : MutableList<VarStat> {
+    private fun variable(): MutableList<VarStat> {
         match(TokenType.Var)
         val idToken = id()
         val idsToken = idList()
@@ -221,7 +235,7 @@ class Parser(private val lex: Lex) {
 
     // [LISTA_ID] => (,) [ID] [LISTA_ID]
     // [LISTA_ID] => Є
-    private fun idList() : List<Token>{
+    private fun idList(): List<Token> {
         val ids = ArrayList<Token>()
 
         while (peek()!!.tokenType == TokenType.Comma) {
@@ -236,7 +250,7 @@ class Parser(private val lex: Lex) {
     // [CAMPOS] => Є
     // [LISTA_CAMPOS] => (;) [CAMPOS] [LISTA_CAMPOS]
     // [LISTA_CAMPOS] => Є
-    private fun fields() : MutableList<Field> {
+    private fun fields(): MutableList<Field> {
         val fields = ArrayList<Field>()
 
         if (peek()!!.tokenType == TokenType.Identifier) {
@@ -244,10 +258,12 @@ class Parser(private val lex: Lex) {
             match(TokenType.Colon)
             var dataType = dataType(idToken.lexeme)
 
-            fields.add(Field(
-                name = idToken.lexeme,
-                dataType = dataType
-            ))
+            fields.add(
+                Field(
+                    name = idToken.lexeme,
+                    dataType = dataType
+                )
+            )
 
             while (peek()!!.tokenType == TokenType.Semicolon) {
                 match(TokenType.Semicolon)
@@ -258,10 +274,12 @@ class Parser(private val lex: Lex) {
                     match(TokenType.Colon)
                     dataType = dataType(idToken.lexeme)
 
-                    fields.add(Field(
-                        name = idToken.lexeme,
-                        dataType = dataType
-                    ))
+                    fields.add(
+                        Field(
+                            name = idToken.lexeme,
+                            dataType = dataType
+                        )
+                    )
                 }
             }
         }
@@ -329,7 +347,7 @@ class Parser(private val lex: Lex) {
 
     // [FUNCAO] => (function) [NOME_FUNCAO] [BLOCO_FUNCAO]
     // [NOME_FUNCAO] => [ID] [PARAM_FUNC] (:) [TIPO_DADO]
-    private fun function() : FunctionStat {
+    private fun function(): FunctionStat {
         match(TokenType.Function)
 
         val idToken = id()
@@ -351,7 +369,7 @@ class Parser(private val lex: Lex) {
 
     // [PARAM_FUNC] => (() [CAMPOS] ())
     // [PARAM_FUNC] => Є
-    private fun functionParameter() : MutableList<Field>{
+    private fun functionParameter(): MutableList<Field> {
         var fields = mutableListOf<Field>()
 
         if (peek()!!.tokenType == TokenType.LeftParenthesis) {
@@ -364,7 +382,7 @@ class Parser(private val lex: Lex) {
     }
 
     // [BLOCO_FUNCAO] => [DEF_VAR] (begin) [COMANDO] [LISTA_COM] (end)
-    private fun functionBloc() : Bloc {
+    private fun functionBloc(): Bloc {
         val commands = ArrayList<AST>()
 
         commands.addAll(defVar())
@@ -378,7 +396,7 @@ class Parser(private val lex: Lex) {
 
     // [LISTA_COM] => (;) [COMANDO] [LISTA_COM]
     // [LISTA_COM] => Є
-    private fun listCommand() : MutableList<AST> {
+    private fun listCommand(): MutableList<AST> {
         val commands = ArrayList<AST>()
 
         while (peek()!!.tokenType == TokenType.Semicolon) {

@@ -9,6 +9,8 @@ open class Symbol(open val name: String) {
 
 class BuiltInType(override val name: String) : Symbol(name)
 
+class CreatedType(override val name: String) : Symbol(name)
+
 class ConstSymbol(override val name: String, override var type: Symbol?) : Symbol(name)
 {
     init {
@@ -18,6 +20,22 @@ class ConstSymbol(override val name: String, override var type: Symbol?) : Symbo
 
 class VarSymbol(override val name: String, override var type: Symbol?) : Symbol(name)
 {
+    init {
+        super.type = type
+    }
+}
+
+class ArraySymbol(override val name: String, override var type: Symbol?, val size : Int) : Symbol(name)
+{
+    init {
+        super.type = type
+    }
+}
+
+class RecordSymbol(override val name: String, override var type: Symbol?) : Symbol(name)
+{
+    val fields: MutableList<Symbol> = mutableListOf()
+
     init {
         super.type = type
     }

@@ -1,5 +1,3 @@
-import kotlin.reflect.typeOf
-
 var currentScope: ScopedSymbolTable? = null
 
 interface AST {
@@ -22,8 +20,7 @@ class VarStat(
             throw VariableAlreadyDeclaredException(varName = name)
         }
 
-        val typeSymbol = currentScope?.lookup(type.toString(), true) ?:
-            throw UnexpectedTypeException(type.toString())
+        val typeSymbol = currentScope?.lookup(type.toString(), true) ?: throw UnexpectedTypeException(type.toString())
 
         val symbol = VarSymbol(name, typeSymbol)
         symbol.category = "var"
@@ -41,7 +38,7 @@ class ConstStat(
             throw ConstantAlreadyDeclaredException(name)
         }
 
-        val typeName = ast::class.java.simpleName.toString().toLowerCase()
+        val typeName = ast.getClassName()
         val typeSymbol = currentScope?.lookup(typeName) ?: throw UnexpectedTypeException(type.toString())
 
         val symbol = ConstSymbol(name, typeSymbol)
@@ -67,7 +64,11 @@ class FunctionStat(
         val functionSymbol = FunctionSymbol(name)
 
         // valida o tipo de retorno da função
-        var typeName = type.getClassName()
+        var typeName = if (type is CreateDataType)
+            type.name
+        else
+            type.getClassName()
+
         functionSymbol.type = currentScope!!.lookup(typeName) ?: throw UnexpectedTypeException(typeName)
 
         currentScope?.insert(functionSymbol)
@@ -82,7 +83,11 @@ class FunctionStat(
 
         // adiciona os parametros no escopo da função
         parameters.forEach {
-            typeName = it.dataType.getClassName()
+            typeName = if (it.dataType is CreateDataType)
+                it.dataType.name
+            else
+                it.dataType.getClassName()
+
             val typeSymbol = currentScope!!.lookup(typeName) ?: throw UnexpectedTypeException(typeName)
 
             val varSymbol = VarSymbol(it.name, typeSymbol)
@@ -108,6 +113,44 @@ class TypeStat(
         symbol.category = "type"
 
         currentScope?.insert(symbol)
+    }
+}
+
+class ArrayStat(
+    override val name: String,
+    override val type: DataType,
+    private val size: Int
+) : Statement(name, type) {
+    override fun visit() {
+        val typeSymbol = currentScope?.lookup(type.toString())
+        currentScope?.insert(ArraySymbol(name, typeSymbol, size))
+    }
+}
+
+class RecordStat(
+    override val name: String,
+    override val type: DataType,
+    val fields: MutableList<Field>
+) : Statement(name, type) {
+    override fun visit() {
+        var typeSymbol = currentScope?.lookup(type.toString())
+        val recordSymbol = RecordSymbol(name, typeSymbol)
+
+        currentScope?.insert(recordSymbol)
+
+        // adiciona os parametros no escopo da função
+        fields.forEach {
+            val typeName = if (it.dataType is CreateDataType)
+                it.dataType.name
+            else
+                it.dataType.getClassName()
+
+            typeSymbol = currentScope!!.lookup(typeName) ?: throw UnexpectedTypeException(typeName)
+
+            val varSymbol = VarSymbol(it.name, typeSymbol)
+            currentScope?.insert(varSymbol)
+            recordSymbol.fields.add(varSymbol)
+        }
     }
 }
 
@@ -282,18 +325,18 @@ class CreateDataType(
 class Text(
     override val name: String
 ) : DataType, Usage(name) {
-    override var type: String = "text"
 
     override fun visit() {
+        type = "text"
     }
 }
 
 class Integer(
     val value: String
 ) : DataType, Usage(value) {
-    override var type: String = "integer"
 
     override fun visit() {
+        type = "integer"
     }
 
     override fun toString(): String = "integer"
@@ -302,10 +345,9 @@ class Integer(
 class Real(
     val value: String
 ) : DataType, Usage(value) {
-    override var type: String = "real"
 
     override fun visit() {
-
+        type = "real"
     }
 
     override fun toString(): String = "real"
@@ -371,17 +413,23 @@ class Record(
 abstract class Usage(
     open val name: String,
 ) : AST {
-    open val type: String? = null
+    open var type: String? = null
 }
 
 class RecordUsage(
     override val name: String,
     val child: Usage
 ) : Usage(name) {
-    override val type: String = "record"
-
     override fun visit() {
+        child.visit()
 
+        val varSymbol = currentScope?.lookup(name)
+        val recordSymbol = currentScope?.lookup(varSymbol?.type?.name ?: "") as RecordSymbol
+        recordSymbol.fields.forEach {
+            if (it.name == child.name) {
+                type = it.type?.name
+            }
+        }
     }
 }
 
@@ -389,21 +437,45 @@ class ArrayUsage(
     override val name: String,
     val child: Usage
 ) : Usage(name) {
-    override val type: String = "array"
-
     override fun visit() {
+        child.visit()
 
+        val varSymbol = currentScope?.lookup(name)
+        var typeSymbol = varSymbol?.type
+
+        var arraySymbol: ArraySymbol? = null
+
+        if (typeSymbol is ArraySymbol) {
+            arraySymbol = typeSymbol
+        }
+
+        while (typeSymbol !is BuiltInType) {
+            if (typeSymbol is ArraySymbol) {
+                arraySymbol = typeSymbol
+            }
+
+            typeSymbol = currentScope?.lookup(typeSymbol!!.name)?.type
+        }
+
+        type = typeSymbol.name
+
+        val sizeUsage = child.name.toIntOrNull()
+        if (sizeUsage != null) {
+            if (arraySymbol != null && varSymbol != null) {
+                if (sizeUsage < 0 || sizeUsage >= arraySymbol.size) {
+                    throw IndexOutOfBoundsException(varSymbol.name, arraySymbol.size, sizeUsage)
+                }
+            }
+        }
     }
 }
 
 class VarUsage(
     override val name: String
 ) : Usage(name) {
-    override var type : String? = null
 
     override fun visit() {
-        val varSymbol = currentScope?.lookup(name) ?:
-            throw UnexpectedVariableException(name)
+        val varSymbol = currentScope?.lookup(name) ?: throw UnexpectedVariableException(name)
 
         type = varSymbol.type?.name
     }
@@ -413,11 +485,9 @@ class FunctionUsage(
     override val name: String,
     val parameters: MutableList<Usage>
 ) : Usage(name) {
-    override var type : String? = null
 
     override fun visit() {
-        val functionSymbol = currentScope?.lookup(name, false) ?:
-            throw FunctionNotDeclaredException(name)
+        val functionSymbol = currentScope?.lookup(name, false) ?: throw FunctionNotDeclaredException(name)
 
         if (functionSymbol !is FunctionSymbol) {
             throw DeclaredNameIsNotAFunctionException(name)
