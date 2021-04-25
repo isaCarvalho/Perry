@@ -424,7 +424,12 @@ class RecordUsage(
         child.visit()
 
         val varSymbol = currentScope?.lookup(name)
-        val recordSymbol = currentScope?.lookup(varSymbol?.type?.name ?: "") as RecordSymbol
+        val recordSymbol = currentScope?.lookup(varSymbol?.type?.name ?: "") ?: throw UnexpectedRecordException(name)
+
+        if (recordSymbol !is RecordSymbol) {
+            throw NameIsNotARecordException(name)
+        }
+
         recordSymbol.fields.forEach {
             if (it.name == child.name) {
                 type = it.type?.name
@@ -440,8 +445,9 @@ class ArrayUsage(
     override fun visit() {
         child.visit()
 
-        val varSymbol = currentScope?.lookup(name)
-        var typeSymbol = varSymbol?.type
+        val varSymbol = currentScope?.lookup(name) ?: throw UnexpectedArrayException(name)
+
+        var typeSymbol = varSymbol.type
 
         var arraySymbol: ArraySymbol? = null
 
@@ -455,6 +461,10 @@ class ArrayUsage(
             }
 
             typeSymbol = currentScope?.lookup(typeSymbol!!.name)?.type
+        }
+
+        if (arraySymbol == null) {
+            throw NameIsNotAnArrayException(name)
         }
 
         type = typeSymbol.name
