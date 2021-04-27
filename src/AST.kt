@@ -471,10 +471,8 @@ class ArrayUsage(
 
         val sizeUsage = child.name.toIntOrNull()
         if (sizeUsage != null) {
-            if (arraySymbol != null && varSymbol != null) {
-                if (sizeUsage < 0 || sizeUsage >= arraySymbol.size) {
-                    throw IndexOutOfBoundsException(varSymbol.name, arraySymbol.size, sizeUsage)
-                }
+            if (sizeUsage < 0 || sizeUsage >= arraySymbol.size) {
+                throw IndexOutOfBoundsException(varSymbol.name, arraySymbol.size, sizeUsage)
             }
         }
     }

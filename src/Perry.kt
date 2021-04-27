@@ -5,5 +5,5 @@ fun main() {
 
     ast.visit()
 
-    print("Perry Compiler")
+    print("Perry, a Pascal Compiler")
 }
