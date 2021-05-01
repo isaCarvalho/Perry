@@ -1,19 +1,37 @@
+import exceptions.GeneratorException
+
 var currentScope: ScopedSymbolTable? = null
 
 interface AST {
-    fun visit()
-}
+    fun visit() {}
 
-/** Statement functions **/
+    open fun gen() {}
+
+    fun getClassName() = this::class.java.simpleName.toString().toLowerCase()
+}
 
 abstract class Statement(
     open val name: String,
-    open val type: DataType
+    open val type: Command
 ) : AST
+
+abstract class Command(
+    open val name: String,
+) : AST {
+    open var type: String? = null
+
+    open fun leftValue(): Command {
+        throw GeneratorException(name)
+    }
+
+    open fun rightValue(): Command {
+        throw GeneratorException(name)
+    }
+}
 
 class VarStat(
     override val name: String,
-    override val type: DataType
+    override val type: Command
 ) : Statement(name, type) {
     override fun visit() {
         if (currentScope?.lookup(name, true) != null) {
@@ -50,7 +68,7 @@ class ConstStat(
 
 class FunctionStat(
     override val name: String,
-    override val type: DataType,
+    override val type: Command,
     val parameters: MutableList<Field>,
     val bloc: Bloc
 ) : Statement(name, type) {
@@ -98,11 +116,16 @@ class FunctionStat(
         bloc.visit()
         currentScope = currentScope?.enclosingScope
     }
+
+    override fun gen() {
+        Writer.write("$name:")
+        bloc.gen()
+    }
 }
 
 class TypeStat(
     override val name: String,
-    override val type: DataType,
+    override val type: Command,
 ) : Statement(name, type) {
     override fun visit() {
         if (currentScope?.lookup(name) != null) {
@@ -118,7 +141,7 @@ class TypeStat(
 
 class ArrayStat(
     override val name: String,
-    override val type: DataType,
+    override val type: Command,
     private val size: Int
 ) : Statement(name, type) {
     override fun visit() {
@@ -129,7 +152,7 @@ class ArrayStat(
 
 class RecordStat(
     override val name: String,
-    override val type: DataType,
+    override val type: Command,
     val fields: MutableList<Field>
 ) : Statement(name, type) {
     override fun visit() {
@@ -157,13 +180,14 @@ class RecordStat(
 /** Binary Operators **/
 
 class BinOp(
-    val left: Usage,
-    val right: Usage,
+    val left: Command,
+    val right: Command,
     val operator: String
-) : Usage(operator), AST {
+) : Command(operator), AST {
     override var type: String? = null
 
     override fun visit() {
+
         left.visit()
         right.visit()
 
@@ -172,6 +196,29 @@ class BinOp(
         } else {
             type = left.type
         }
+    }
+
+
+    override fun gen() {
+        when (operator) {
+            "=" -> {
+                val c1 = left.leftValue()
+                val c2 = right.rightValue()
+                Writer.write("$c1 = $c2")
+            }
+
+        }
+    }
+
+    override fun rightValue(): Command {
+        val temp = Generator.generateTemp()
+
+        val c1 = left.rightValue()
+        val c2 = right.rightValue()
+
+        Writer.write("$temp = $c1 $operator $c2")
+
+        return Identifier(temp)
     }
 }
 
@@ -194,64 +241,107 @@ class Program(
 
         currentScope = currentScope?.enclosingScope
     }
+
+    override fun gen() {
+        Writer.write("GOTO main")
+        statements.forEach { it.gen() }
+        Writer.write("main:")
+        bloc.gen()
+    }
 }
 
 class Bloc(
-    private val commands: MutableList<AST>
+    private val commands: MutableList<Command>,
+    private val statements: MutableList<Statement>? = null
 ) : AST {
     override fun visit() {
+        statements?.forEach { it.visit() }
         commands.forEach { it.visit() }
+    }
+
+    override fun gen() {
+        statements?.forEach { it.gen() }
+        commands.forEach { it.gen() }
     }
 }
 
 class While(
-    val condition: AST,
+    val condition: Command,
     val bloc: Bloc
-) : AST {
+) : Command("while") {
     override fun visit() {
         condition.visit()
         bloc.visit()
     }
+
+    override fun gen() {
+        val label1 = Generator.generateLabel()
+        val label2 = Generator.generateLabel()
+
+        var exp = condition.rightValue()
+        Writer.write("IFFALSE $exp GOTO $label2")
+        Writer.write("$label1:")
+
+        bloc.gen()
+
+        exp = condition.rightValue()
+        Writer.write("IFTRUE $exp GOTO $label1")
+
+        Writer.write("$label2:")
+    }
 }
 
 class If(
-    val condition: AST,
+    val condition: Command,
     val bloc: Bloc,
     val elseBloc: Bloc?
-) : AST {
+) : Command("if") {
     override fun visit() {
         condition.visit()
         bloc.visit()
         elseBloc?.visit()
     }
-}
 
-class Write(
-    val value: AST
-) : AST {
-    override fun visit() {
+    override fun gen() {
+        var label = Generator.generateLabel()
+        val exp = condition.rightValue()
+
+        Writer.write("IFFALSE $exp GOTO $label")
+        bloc.gen()
+        Writer.write("$label:")
+
+        if (elseBloc != null) {
+            label = Generator.generateLabel()
+
+            Writer.write("IFTRUE $exp GOTO $label")
+            elseBloc.gen()
+            Writer.write("$label:")
+        }
 
     }
 }
 
-class Read(
-    val value: Usage
-) : AST {
-    override fun visit() {
+class Write(private val value: Command) : Command("write") {
 
+    override fun gen() {
+        val c1 = value.rightValue()
+        Writer.write("WRITE $c1")
     }
 }
 
-/** Data Types **/
+class Read(private val value: Command) : Command("read") {
 
-interface DataType : AST
+    override fun gen() {
+        val c1 = value.rightValue()
+        Writer.write("READ $c1")
+    }
+}
 
 // extention function to get the class' name
-fun AST.getClassName() = this::class.java.simpleName.toString().toLowerCase()
 
 class CreateDataType(
     override val name: String
-) : DataType, Usage(name) {
+) : Command(name) {
     override fun visit() {
         currentScope?.insert(BuiltInType(name))
     }
@@ -261,40 +351,46 @@ class CreateDataType(
 
 class Text(
     override val name: String
-) : DataType, Usage(name) {
+) : Command(name) {
 
     override fun visit() {
         type = "text"
     }
+
+    override fun rightValue(): Command = this
+
+    override fun toString(): String = name
 }
 
-class Integer(
-    val value: String
-) : DataType, Usage(value) {
+class Integer(val value: String) : Command(value) {
 
     override fun visit() {
         type = "integer"
     }
 
-    override fun toString(): String = "integer"
+    override fun rightValue(): Command = this
+
+    override fun toString(): String = value
 }
 
 class Real(
     val value: String
-) : DataType, Usage(value) {
+) : Command(value) {
 
     override fun visit() {
         type = "real"
     }
 
-    override fun toString(): String = "real"
+    override fun rightValue(): Command = this
+
+    override fun toString(): String = value
 }
 
 class Array(
     override val name: String,
     val size: String,
-    val dataType: DataType
-) : DataType, Usage(name) {
+    val dataType: Command
+) : Command(name) {
 
     override var type: String? = null
 
@@ -315,8 +411,8 @@ class Array(
 
 class Field(
     override val name: String,
-    val dataType: DataType
-) : DataType, Usage(name) {
+    val dataType: Command
+) : Command(name) {
     override var type: String? = null
 
     init {
@@ -337,26 +433,18 @@ class Field(
 class Record(
     override val name: String,
     val fields: MutableList<Field>
-) : DataType, Usage(name) {
-    override fun visit() {
+) : Command(name) {
 
-    }
 
     override fun toString(): String = "record"
+
+
 }
 
-/** Usage Classes **/
-
-abstract class Usage(
-    open val name: String,
-) : AST {
-    open var type: String? = null
-}
-
-class RecordUsage(
+class RecordCommand(
     override val name: String,
-    val child: Usage
-) : Usage(name) {
+    val child: Command
+) : Command(name) {
     override fun visit() {
         child.visit()
 
@@ -373,12 +461,18 @@ class RecordUsage(
             }
         }
     }
+
+    override fun leftValue(): Command = this
+
+    override fun rightValue(): Command = this
+
+    override fun toString(): String = "$name.$child"
 }
 
-class ArrayUsage(
+class ArrayCommand(
     override val name: String,
-    val child: Usage
-) : Usage(name) {
+    val child: Command
+) : Command(name) {
     override fun visit() {
         child.visit()
 
@@ -413,23 +507,43 @@ class ArrayUsage(
             }
         }
     }
+
+    override fun leftValue(): Command = ArrayCommand(name, child.rightValue())
+
+    override fun rightValue(): Command {
+        val temp = Generator.generateTemp()
+        val c1 = leftValue()
+
+        Writer.write("$temp = $c1")
+
+        return Identifier(temp)
+    }
+
+    override fun toString(): String = "$name[$child]"
 }
 
-class VarUsage(
+class Identifier(
     override val name: String
-) : Usage(name) {
+) : Command(name) {
 
     override fun visit() {
-        val varSymbol = currentScope?.lookup(name) ?: throw UnexpectedVariableException(name)
+        val varSymbol = currentScope?.lookup(name)
+            ?: throw UnexpectedVariableException(name)
 
         type = varSymbol.type?.name
     }
+
+    override fun leftValue(): Command = this
+
+    override fun rightValue(): Command = this
+
+    override fun toString(): String = name
 }
 
-class FunctionUsage(
+class FunctionCommand(
     override val name: String,
-    val parameters: MutableList<Usage>
-) : Usage(name) {
+    val parameters: MutableList<Command>
+) : Command(name) {
 
     override fun visit() {
         val functionSymbol = currentScope?.lookup(name, false) ?: throw FunctionNotDeclaredException(name)
@@ -446,5 +560,17 @@ class FunctionUsage(
 
         type = functionSymbol.type?.name
         parameters.forEach { it.visit() }
+    }
+
+    override fun rightValue(): Command {
+        parameters.forEach {
+            val param = it.rightValue()
+            Writer.write("param $param")
+        }
+
+        val temp = Generator.generateTemp()
+        Writer.write("$temp = call $name ${parameters.size}")
+
+        return Identifier(temp)
     }
 }

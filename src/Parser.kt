@@ -26,7 +26,6 @@ class Parser(private val lex: Lex) {
                 isEnd = true
             }
         }
-        println("Token ${peek()} read")
     }
 
     private fun peek(k: Int = 1): Token? {
@@ -43,7 +42,6 @@ class Parser(private val lex: Lex) {
         val token = peek()
 
         if (token != null && token.tokenType == type) {
-            println("Match: ${token.tokenType}")
             readToken()
         } else {
             throw ParserException(token, type)
@@ -62,7 +60,7 @@ class Parser(private val lex: Lex) {
 
     // [PRINCIPAL] => (begin) [COMANDO] [LISTA_COM] (end)
     private fun mainFunction(): Bloc {
-        val commands = ArrayList<AST>()
+        val commands = mutableListOf<Command>()
 
         match(TokenType.Begin)
         commands.add(command())
@@ -138,7 +136,7 @@ class Parser(private val lex: Lex) {
     }
 
     // [NUMERO] => seqüência numérica com a ocorrência de no máximo um ponto (tratado no léxico)
-    private fun number(): DataType {
+    private fun number(): Command {
         val token = peek()!!
 
         return when (token.tokenType) {
@@ -166,7 +164,7 @@ class Parser(private val lex: Lex) {
 
     // [CONST_VALOR] => Seqüência alfanumérica iniciada por aspas e terminada em aspas (tratado no léxico)
     // [CONST_VALOR] => [EXP_MAT]
-    private fun constValue(): AST {
+    private fun constValue(): Command {
         val token = peek()!!
         val tokenType = token.tokenType
 
@@ -292,7 +290,7 @@ class Parser(private val lex: Lex) {
     // [TIPO_DADO] => (array) ([) [NUMERO] (]) (of) [TIPO_DADO]
     // [TIPO_DADO] => (record) [CAMPOS] (end)
     // [TIPO_DADO] => [ID]
-    private fun dataType(name: String): DataType {
+    private fun dataType(name: String): Command {
         val token = peek()!!
         return when (token.tokenType) {
             TokenType.Integer -> Integer(match(TokenType.Integer).lexeme)
@@ -383,21 +381,22 @@ class Parser(private val lex: Lex) {
 
     // [BLOCO_FUNCAO] => [DEF_VAR] (begin) [COMANDO] [LISTA_COM] (end)
     private fun functionBloc(): Bloc {
-        val commands = ArrayList<AST>()
+        val statements = mutableListOf<Statement>()
+        val commands = mutableListOf<Command>()
 
-        commands.addAll(defVar())
+        statements.addAll(defVar())
         match(TokenType.Begin)
         commands.add(command())
         commands.addAll(listCommand())
         match(TokenType.End)
 
-        return Bloc(commands)
+        return Bloc(commands, statements)
     }
 
     // [LISTA_COM] => (;) [COMANDO] [LISTA_COM]
     // [LISTA_COM] => Є
-    private fun listCommand(): MutableList<AST> {
-        val commands = ArrayList<AST>()
+    private fun listCommand(): MutableList<Command> {
+        val commands = mutableListOf<Command>()
 
         while (peek()!!.tokenType == TokenType.Semicolon) {
             match(TokenType.Semicolon)
@@ -410,7 +409,7 @@ class Parser(private val lex: Lex) {
     // [BLOCO] => (begin) [COMANDO] [LISTA_COM] (end)
     // [BLOCO] => [COMANDO]
     private fun bloc(): Bloc {
-        val commands = ArrayList<AST>()
+        val commands = mutableListOf<Command>()
 
         val token = peek()!!
 
@@ -452,7 +451,7 @@ class Parser(private val lex: Lex) {
     // [COMANDO] => (if) [EXP_LOGICA] (then) [BLOCO] [ELSE]
     // [COMANDO] => (write) [CONST_VALOR]
     // [COMANDO] => (read) [ID] [NOME]
-    private fun command(): AST {
+    private fun command(): Command {
         val token = peek()!!
 
         return when (token.tokenType) {
@@ -503,8 +502,8 @@ class Parser(private val lex: Lex) {
 
             TokenType.Read -> {
                 match(TokenType.Read)
-                id()
-                val varUsage = name(token.lexeme)
+                val idToken = id()
+                val varUsage = name(idToken.lexeme)
 
                 Read(varUsage)
             }
@@ -534,8 +533,8 @@ class Parser(private val lex: Lex) {
     // [LISTA_PARAM] => [PARAMETRO] (,) [LISTA_PARAM]
     // [LISTA_PARAM] => [PARAMETRO]
     // [LISTA_PARAM] => Є
-    private fun listParameter(): MutableList<Usage> {
-        val listParameter = mutableListOf<Usage>()
+    private fun listParameter(): MutableList<Command> {
+        val listParameter = mutableListOf<Command>()
 
         var token = peek()!!
 
@@ -559,7 +558,7 @@ class Parser(private val lex: Lex) {
 
     // [EXP_LOGICA] => [EXP_ MAT] [OP_LOGICO] [EXP_LOGICA]
     // [EXP_LOGICA] => [EXP_ MAT]
-    private fun expLogical(): Usage {
+    private fun expLogical(): Command {
 
         val left = expMath()
 
@@ -588,7 +587,7 @@ class Parser(private val lex: Lex) {
 
     // [EXP_MAT] => [PARAMETRO] [OP_ MAT] [EXP_ MAT]
     // [EXP_MAT] => [PARAMETRO]
-    private fun expMath(): Usage {
+    private fun expMath(): Command {
         val left = parameter()
 
         val token = peek(1)!!
@@ -616,7 +615,7 @@ class Parser(private val lex: Lex) {
 
     // [PARAMETRO] => [ID] [NOME]
     // [PARAMETRO] => [NUMERO]
-    private fun parameter(): Usage {
+    private fun parameter(): Command {
         val token = peek()!!
 
         return when (token.tokenType) {
@@ -648,7 +647,7 @@ class Parser(private val lex: Lex) {
     // [NOME] => ([) [PARAMETRO] (])
     // [NOME] => (() [LISTA_PARAM] ())
     // [NOME] => Є
-    private fun name(name: String): Usage {
+    private fun name(name: String): Command {
         val nameToken = peek()!!
 
         return when (nameToken.tokenType) {
@@ -657,7 +656,7 @@ class Parser(private val lex: Lex) {
                 val idToken = id()
                 val child = name(idToken.lexeme)
 
-                RecordUsage(name = name, child = child)
+                RecordCommand(name = name, child = child)
             }
 
             TokenType.LeftBracket -> {
@@ -665,7 +664,7 @@ class Parser(private val lex: Lex) {
                 val varToken = parameter()
                 match(TokenType.RightBracket)
 
-                ArrayUsage(name = name, child = varToken)
+                ArrayCommand(name = name, child = varToken)
             }
 
             TokenType.LeftParenthesis -> {
@@ -673,10 +672,10 @@ class Parser(private val lex: Lex) {
                 val parameters = listParameter()
                 match(TokenType.RightParenthesis)
 
-                FunctionUsage(name = name, parameters = parameters)
+                FunctionCommand(name = name, parameters = parameters)
             }
 
-            else -> VarUsage(name)
+            else -> Identifier(name)
         }
     }
 }

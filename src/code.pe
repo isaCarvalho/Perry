@@ -1,0 +1,86 @@
+GOTO main
+fatorial:
+i = 1
+result = 1
+t1 = i < a
+IFFALSE t1 GOTO Label2
+Label1:
+t2 = result * i
+result = t2
+t3 = i + 1
+i = t3
+t4 = i < a
+IFTRUE t4 GOTO Label1
+Label2:
+exp:
+i = 1
+result = a
+t5 = b = 0
+IFFALSE t5 GOTO Label3
+result = 1
+Label3:
+IFTRUE t5 GOTO Label4
+t6 = i < b
+IFFALSE t6 GOTO Label6
+Label5:
+t7 = a * a
+result = t7
+t8 = i + 1
+i = t8
+t9 = i < b
+IFTRUE t9 GOTO Label5
+Label6:
+Label4:
+lerDados:
+WRITE "digite as notas do aluno"
+READ result.nota1
+READ result.nota2
+maior:
+i = 0
+t10 = a[14]
+result = t10
+t11 = i < 15
+IFFALSE t11 GOTO Label8
+Label7:
+t13 = a[i]
+t12 = t13 > result
+IFFALSE t12 GOTO Label9
+t14 = a[i]
+result = t14
+Label9:
+t15 = i < 15
+IFTRUE t15 GOTO Label7
+Label8:
+menor:
+i = 0
+result = F.nota1
+t16 = i < 15
+IFFALSE t16 GOTO Label11
+Label10:
+t18 = a[i]
+t17 = t18 < result
+IFFALSE t17 GOTO Label12
+t19 = a[i]
+result = t19
+Label12:
+t20 = i < 15
+IFTRUE t20 GOTO Label10
+Label11:
+media:
+t21 = m / 2
+result = t21
+main:
+t22 = TAM + 20
+A = t22
+param A
+t23 = call fatorial 1
+B = t23
+param A
+param B
+t24 = call exp 2
+C = t24
+param E
+t25 = call media 1
+D = t25
+t26 = call lerDados 0
+F = t26
