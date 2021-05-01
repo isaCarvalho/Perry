@@ -462,9 +462,10 @@ class Parser(private val lex: Lex) {
                 match(TokenType.Assignment)
                 val right = expMath()
 
-                AssignmentOp(
+                BinOp(
                     left = left,
-                    right = right
+                    right = right,
+                    operator = "="
                 )
             }
 
@@ -567,19 +568,19 @@ class Parser(private val lex: Lex) {
         return when (token.tokenType) {
             TokenType.LessThan -> {
                 match(TokenType.LessThan)
-                LessThan(left, expLogical())
+                BinOp(left, expLogical(), "<")
             }
             TokenType.MoreThan -> {
                 match(TokenType.MoreThan)
-                MoreThan(left, expLogical())
+                BinOp(left, expLogical(), ">")
             }
             TokenType.Equal -> {
                 match(TokenType.Equal)
-                Equal(left, expLogical())
+                BinOp(left, expLogical(), "=")
             }
             TokenType.Exclamation -> {
                 match(TokenType.Exclamation)
-                Exclamation(left, expLogical())
+                BinOp(left, expLogical(), "!")
             }
             else -> left
         }
@@ -595,19 +596,19 @@ class Parser(private val lex: Lex) {
         return when (token.tokenType) {
             TokenType.Plus -> {
                 match(TokenType.Plus)
-                Plus(left, expMath())
+                BinOp(left, expMath(), "+")
             }
             TokenType.Minus -> {
                 match(TokenType.Minus)
-                Minus(left, expMath())
+                BinOp(left, expMath(), "-")
             }
             TokenType.Divider -> {
                 match(TokenType.Divider)
-                Div(left, expMath())
+                BinOp(left, expMath(), "/")
             }
             TokenType.Times -> {
                 match(TokenType.Times)
-                Mul(left, expMath())
+                BinOp(left, expMath(), "*")
             }
             else -> left
         }

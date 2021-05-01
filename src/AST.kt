@@ -156,10 +156,10 @@ class RecordStat(
 
 /** Binary Operators **/
 
-abstract class BinOp(
-    open val left: Usage,
-    open val right: Usage,
-    operator: String
+class BinOp(
+    val left: Usage,
+    val right: Usage,
+    val operator: String
 ) : Usage(operator), AST {
     override var type: String? = null
 
@@ -174,69 +174,6 @@ abstract class BinOp(
         }
     }
 }
-
-// Math Operators
-
-abstract class MathOp(
-    override val left: Usage,
-    override val right: Usage,
-    operator: String
-) : BinOp(left, right, operator)
-
-class Plus(
-    override val left: Usage,
-    override val right: Usage
-) : MathOp(left, right, "+")
-
-class Minus(
-    override val left: Usage,
-    override val right: Usage
-) : MathOp(left, right, "-")
-
-class Mul(
-    override val left: Usage,
-    override val right: Usage
-) : MathOp(left, right, "*")
-
-class Div(
-    override val left: Usage,
-    override val right: Usage
-) : MathOp(left, right, "/")
-
-// Logical Operators
-
-abstract class LogicalOp(
-    override val left: Usage,
-    override val right: Usage,
-    operator: String
-) : BinOp(left, right, operator)
-
-class LessThan(
-    override val left: Usage,
-    override val right: Usage
-) : LogicalOp(left, right, "<")
-
-class MoreThan(
-    override val left: Usage,
-    override val right: Usage
-) : LogicalOp(left, right, ">")
-
-class Exclamation(
-    override val left: Usage,
-    override val right: Usage
-) : LogicalOp(left, right, "!")
-
-class Equal(
-    override val left: Usage,
-    override val right: Usage
-) : LogicalOp(left, right, "=")
-
-// Assignment Operator
-
-class AssignmentOp(
-    override val left: Usage,
-    override val right: Usage
-) : BinOp(left, right, ":=")
 
 /** Command Blocs **/
 
