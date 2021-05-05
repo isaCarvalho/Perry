@@ -206,7 +206,6 @@ class BinOp(
                 val c2 = right.rightValue()
                 Writer.write("$c1 = $c2")
             }
-
         }
     }
 
